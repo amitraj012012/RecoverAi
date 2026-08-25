@@ -1,0 +1,87 @@
+from typing import Optional
+import jwt
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from app.core.config import settings
+from app.core.logging import logger
+from app.schemas.auth import MerchantIdentity
+
+security_bearer = HTTPBearer(auto_error=False)
+
+
+def decode_supabase_jwt(token: str) -> dict:
+    """
+    Decodes and validates a Supabase Auth JWT token.
+    If SUPABASE_JWT_SECRET is configured, performs signature verification.
+    Otherwise in development, validates structure, claims (sub, exp), and returns payload.
+    """
+    try:
+        if settings.SUPABASE_JWT_SECRET:
+            payload = jwt.decode(
+                token,
+                settings.SUPABASE_JWT_SECRET,
+                algorithms=["HS256"],
+                options={"verify_aud": False},
+            )
+        else:
+            # Decode without verification for development / mock / testing if secret is not set
+            payload = jwt.decode(
+                token,
+                options={"verify_signature": False, "verify_exp": True},
+            )
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication token has expired. Please log in again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.InvalidTokenError as e:
+        logger.warning(f"Invalid JWT token provided: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except Exception as e:
+        logger.error(f"Error decoding authentication token: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
+async def get_current_merchant(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer),
+) -> MerchantIdentity:
+    """
+    FastAPI dependency to extract and verify the authenticated merchant identity from request.
+    Rejects any unauthenticated or tampered requests with 401 Unauthorized.
+    """
+    if not credentials or not credentials.credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required. Missing Bearer token.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token = credentials.credentials
+    payload = decode_supabase_jwt(token)
+
+    merchant_id = payload.get("sub")
+    email = payload.get("email")
+    role = payload.get("role", "authenticated")
+
+    if not merchant_id or not email:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token payload: missing merchant identification.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return MerchantIdentity(
+        merchant_id=str(merchant_id),
+        email=str(email),
+        role=str(role),
+    )

@@ -1,0 +1,170 @@
+{
+  "model_version": "logistic-regression-v1",
+  "model_type": "LogisticRegression",
+  "trained_at": "2026-08-23T13:17:45.149449+00:00",
+  "random_seed": 42,
+  "dataset": {
+    "total_records": 1746,
+    "train_size": 1228,
+    "val_size": 256,
+    "test_size": 262,
+    "class_distribution": {
+      "recoverable": 1680,
+      "unrecoverable": 66
+    }
+  },
+  "metrics": {
+    "Logistic Regression": {
+      "roc_auc": 0.9956,
+      "pr_auc": 0.9999,
+      "accuracy": 0.9809,
+      "precision": 0.9882,
+      "recall": 0.9921,
+      "f1": 0.9902,
+      "brier_score": 0.0096,
+      "confusion_matrix": [
+        [
+          5,
+          3
+        ],
+        [
+          2,
+          252
+        ]
+      ]
+    },
+    "Random Forest": {
+      "roc_auc": 0.9966,
+      "pr_auc": 0.9999,
+      "accuracy": 0.9847,
+      "precision": 1.0,
+      "recall": 0.9843,
+      "f1": 0.9921,
+      "brier_score": 0.0153,
+      "confusion_matrix": [
+        [
+          8,
+          0
+        ],
+        [
+          4,
+          250
+        ]
+      ]
+    }
+  },
+  "selected_model": "Logistic Regression",
+  "selection_reason": "High ROC-AUC and PR-AUC with calibrated probabilistic outputs and explainable linear coefficients for financial transparency.",
+  "feature_names": [
+    "tenure_months",
+    "activity_score",
+    "subscription_value_inr",
+    "payment_amount_inr",
+    "amount_to_subscription_ratio",
+    "historical_success_count",
+    "historical_fail_count",
+    "historical_success_rate",
+    "method_card",
+    "method_upi",
+    "method_netbanking",
+    "method_wallet",
+    "reason_card_expired",
+    "reason_upi_timeout",
+    "reason_insufficient_funds",
+    "reason_bank_unavailable",
+    "reason_otp_timeout",
+    "reason_exceeded_limit"
+  ],
+  "feature_impacts": [
+    {
+      "feature": "tenure_months",
+      "weight": 1.9099,
+      "direction": "positive"
+    },
+    {
+      "feature": "activity_score",
+      "weight": 1.7809,
+      "direction": "positive"
+    },
+    {
+      "feature": "historical_fail_count",
+      "weight": -1.6613,
+      "direction": "negative"
+    },
+    {
+      "feature": "reason_exceeded_limit",
+      "weight": -1.5517,
+      "direction": "negative"
+    },
+    {
+      "feature": "reason_insufficient_funds",
+      "weight": -0.6607,
+      "direction": "negative"
+    },
+    {
+      "feature": "reason_card_expired",
+      "weight": 0.5885,
+      "direction": "positive"
+    },
+    {
+      "feature": "historical_success_count",
+      "weight": 0.5375,
+      "direction": "positive"
+    },
+    {
+      "feature": "reason_upi_timeout",
+      "weight": 0.5009,
+      "direction": "positive"
+    },
+    {
+      "feature": "reason_bank_unavailable",
+      "weight": 0.2657,
+      "direction": "positive"
+    },
+    {
+      "feature": "reason_otp_timeout",
+      "weight": -0.2092,
+      "direction": "negative"
+    },
+    {
+      "feature": "historical_success_rate",
+      "weight": 0.1634,
+      "direction": "positive"
+    },
+    {
+      "feature": "method_card",
+      "weight": 0.1011,
+      "direction": "positive"
+    },
+    {
+      "feature": "method_netbanking",
+      "weight": -0.0993,
+      "direction": "negative"
+    },
+    {
+      "feature": "payment_amount_inr",
+      "weight": -0.0446,
+      "direction": "negative"
+    },
+    {
+      "feature": "subscription_value_inr",
+      "weight": -0.0445,
+      "direction": "negative"
+    },
+    {
+      "feature": "amount_to_subscription_ratio",
+      "weight": -0.0197,
+      "direction": "negative"
+    },
+    {
+      "feature": "method_wallet",
+      "weight": -0.0061,
+      "direction": "negative"
+    },
+    {
+      "feature": "method_upi",
+      "weight": -0.004,
+      "direction": "negative"
+    }
+  ]
+}

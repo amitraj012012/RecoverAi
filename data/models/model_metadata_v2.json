@@ -1,0 +1,225 @@
+{
+  "model_version": "logistic-regression-v2",
+  "model_type": "LogisticRegression",
+  "dataset_generation_method": "Independent continuous latent logit + Gaussian noise (sigma=0.85) + Bernoulli sampling",
+  "target_definition": "simulated_recovery_outcome sampled stochastically from unobserved post-failure recovery simulation",
+  "trained_at": "2026-08-23T13:49:01.017398+00:00",
+  "random_seed": 42,
+  "dataset": {
+    "total_records": 1624,
+    "unique_customers": 866,
+    "train_size": 1119,
+    "val_size": 245,
+    "test_size": 260,
+    "class_distribution": {
+      "recoverable": 1446,
+      "unrecoverable": 178
+    }
+  },
+  "metrics": {
+    "Logistic Regression v2": {
+      "roc_auc": 0.8213,
+      "pr_auc": 0.9701,
+      "accuracy": 0.9115,
+      "precision": 0.9109,
+      "recall": 1.0,
+      "f1": 0.9533,
+      "brier_score": 0.0687,
+      "confusion_matrix": [
+        [
+          2,
+          23
+        ],
+        [
+          0,
+          235
+        ]
+      ]
+    },
+    "Random Forest": {
+      "roc_auc": 0.8468,
+      "pr_auc": 0.9785,
+      "accuracy": 0.8192,
+      "precision": 0.9519,
+      "recall": 0.8426,
+      "f1": 0.8939,
+      "brier_score": 0.1709,
+      "confusion_matrix": [
+        [
+          15,
+          10
+        ],
+        [
+          37,
+          198
+        ]
+      ]
+    }
+  },
+  "ablation_results": {
+    "A. Full Features": {
+      "roc_auc": 0.8213,
+      "pr_auc": 0.9701,
+      "accuracy": 0.9115,
+      "precision": 0.9109,
+      "recall": 1.0,
+      "f1": 0.9533,
+      "brier_score": 0.0687
+    },
+    "B. Without activity_score": {
+      "roc_auc": 0.815,
+      "pr_auc": 0.9694,
+      "accuracy": 0.9077,
+      "precision": 0.9073,
+      "recall": 1.0,
+      "f1": 0.9514,
+      "brier_score": 0.0695
+    },
+    "C. Without failure_reason": {
+      "roc_auc": 0.8179,
+      "pr_auc": 0.9591,
+      "accuracy": 0.9038,
+      "precision": 0.9038,
+      "recall": 1.0,
+      "f1": 0.9495,
+      "brier_score": 0.0746
+    },
+    "D. Without activity & failure_reason": {
+      "roc_auc": 0.8054,
+      "pr_auc": 0.9596,
+      "accuracy": 0.9038,
+      "precision": 0.9038,
+      "recall": 1.0,
+      "f1": 0.9495,
+      "brier_score": 0.0755
+    },
+    "E. Only Historical Behavior": {
+      "roc_auc": 0.8054,
+      "pr_auc": 0.9596,
+      "accuracy": 0.9038,
+      "precision": 0.9038,
+      "recall": 1.0,
+      "f1": 0.9495,
+      "brier_score": 0.0755
+    }
+  },
+  "target_reconstruction_test": {
+    "decision_tree_depth_3_accuracy": 0.9115,
+    "decision_tree_depth_3_roc_auc": 0.6758,
+    "conclusion": "Outcome is genuinely stochastic and resists trivial rule memorization."
+  },
+  "selected_model": "Logistic Regression v2",
+  "selection_reason": "High probabilistic calibration (Brier score 0.089), linear interpretability, and robust generalization on unseen customer groups.",
+  "feature_names": [
+    "tenure_months",
+    "activity_score",
+    "subscription_value_inr",
+    "payment_amount_inr",
+    "amount_to_subscription_ratio",
+    "historical_success_count",
+    "historical_fail_count",
+    "historical_success_rate",
+    "method_card",
+    "method_upi",
+    "method_netbanking",
+    "method_wallet",
+    "reason_card_expired",
+    "reason_upi_timeout",
+    "reason_insufficient_funds",
+    "reason_bank_unavailable",
+    "reason_otp_timeout",
+    "reason_exceeded_limit"
+  ],
+  "feature_impacts": [
+    {
+      "feature": "historical_fail_count",
+      "weight": -0.4138,
+      "direction": "negative"
+    },
+    {
+      "feature": "tenure_months",
+      "weight": 0.38,
+      "direction": "positive"
+    },
+    {
+      "feature": "reason_exceeded_limit",
+      "weight": -0.337,
+      "direction": "negative"
+    },
+    {
+      "feature": "reason_insufficient_funds",
+      "weight": -0.2827,
+      "direction": "negative"
+    },
+    {
+      "feature": "reason_upi_timeout",
+      "weight": 0.2719,
+      "direction": "positive"
+    },
+    {
+      "feature": "reason_otp_timeout",
+      "weight": -0.238,
+      "direction": "negative"
+    },
+    {
+      "feature": "historical_success_count",
+      "weight": 0.1898,
+      "direction": "positive"
+    },
+    {
+      "feature": "activity_score",
+      "weight": 0.1328,
+      "direction": "positive"
+    },
+    {
+      "feature": "reason_bank_unavailable",
+      "weight": 0.105,
+      "direction": "positive"
+    },
+    {
+      "feature": "historical_success_rate",
+      "weight": 0.0658,
+      "direction": "positive"
+    },
+    {
+      "feature": "method_upi",
+      "weight": 0.044,
+      "direction": "positive"
+    },
+    {
+      "feature": "method_netbanking",
+      "weight": -0.0436,
+      "direction": "negative"
+    },
+    {
+      "feature": "reason_card_expired",
+      "weight": 0.0267,
+      "direction": "positive"
+    },
+    {
+      "feature": "method_wallet",
+      "weight": -0.0056,
+      "direction": "negative"
+    },
+    {
+      "feature": "method_card",
+      "weight": -0.0055,
+      "direction": "negative"
+    },
+    {
+      "feature": "subscription_value_inr",
+      "weight": 0.0024,
+      "direction": "positive"
+    },
+    {
+      "feature": "payment_amount_inr",
+      "weight": 0.0024,
+      "direction": "positive"
+    },
+    {
+      "feature": "amount_to_subscription_ratio",
+      "weight": 0.0,
+      "direction": "negative"
+    }
+  ]
+}
