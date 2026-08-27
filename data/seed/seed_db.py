@@ -28,6 +28,13 @@ def seed_database(merchant_id: str = "merchant_default", target_payments: int = 
     db = SessionLocal()
 
     try:
+        # If not clean reseed, check if merchant data already exists
+        if not clean:
+            existing_count = db.query(Customer).filter(Customer.merchant_id == merchant_id).count()
+            if existing_count > 0:
+                print(f"Database already contains {existing_count} records for merchant '{merchant_id}'. Skipping duplicate seeding.")
+                return
+
         dataset = generate_synthetic_dataset(
             num_customers=1200,
             target_min_payments=target_payments,
