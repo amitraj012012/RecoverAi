@@ -1,6 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://omeaqucqnmlfvwmuvdel.supabase.co';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
 // If Supabase credentials are configured, initialize the official client.
@@ -9,7 +9,8 @@ export const isSupabaseConfigured = Boolean(
   supabaseUrl &&
   supabaseAnonKey &&
   supabaseUrl !== 'https://your-project.supabase.co' &&
-  supabaseAnonKey !== 'your-supabase-anon-key'
+  supabaseAnonKey !== 'your-supabase-anon-key' &&
+  supabaseAnonKey !== 'placeholder-anon-key'
 );
 
 export const supabase: SupabaseClient = createClient(
