@@ -70,13 +70,19 @@ def test_production_mode_jwt_enforcement(monkeypatch):
     monkeypatch.setattr(settings, "SUPABASE_JWKS_URL", None)
     monkeypatch.setattr(settings, "DATABASE_URL", "sqlite:///./recoverai.db")
     
+    # 1. HS256 token without SUPABASE_JWT_SECRET in prod -> 500 configuration error
     token = create_test_token(secret=None)
     resp = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
-    assert resp.status_code == 401
-    assert "signature" in resp.json()["detail"].lower()
+    assert resp.status_code == 500
+    assert "missing SUPABASE_JWT_SECRET" in resp.json()["detail"]
 
-    # Production mode with valid HMAC secret signature -> 200 authorized
+    # 2. HS256 token with wrong secret signature in prod -> 401 unauthorized
     monkeypatch.setattr(settings, "SUPABASE_JWT_SECRET", "correct_production_secret_key_123456789")
+    bad_token = create_test_token(secret="wrong_secret_key_987654321")
+    resp2 = client.get("/auth/me", headers={"Authorization": f"Bearer {bad_token}"})
+    assert resp2.status_code == 401
+
+    # 3. Production mode with valid HMAC secret signature -> 200 authorized
     good_token = create_test_token(secret="correct_production_secret_key_123456789")
     resp3 = client.get("/auth/me", headers={"Authorization": f"Bearer {good_token}"})
     assert resp3.status_code == 200
@@ -88,7 +94,6 @@ def test_supabase_ecc_jwks_asymmetric_verification(monkeypatch):
     Verifies that Supabase's current asymmetric ECC P-256 (ES256) signing keys
     are cryptographically verified using the JWKS key matching the token's kid.
     """
-    # Generate an EC P-256 keypair simulating Supabase Auth signing key
     private_key = ec.generate_private_key(ec.SECP256R1())
     public_key = private_key.public_key()
     
@@ -105,7 +110,6 @@ def test_supabase_ecc_jwks_asymmetric_verification(monkeypatch):
     # Encode with ES256
     valid_ecc_token = jwt.encode(payload, private_key, algorithm="ES256", headers=headers)
 
-    # Mock PyJWKClient to return public key for kid
     class MockSigningKey:
         def __init__(self, key, key_id):
             self.key = key
@@ -154,3 +158,58 @@ def test_supabase_ecc_jwks_asymmetric_verification(monkeypatch):
     monkeypatch.setattr(sec, "get_jwks_client", lambda url: bad_client)
     resp_unknown = client.get("/auth/me", headers={"Authorization": f"Bearer {valid_ecc_token}"})
     assert resp_unknown.status_code == 401
+
+
+def test_es256_token_never_falls_through_to_hmac(monkeypatch, caplog):
+    """
+    Regression Test: Verifies that an ES256 Supabase token NEVER falls through
+    to HMAC / SUPABASE_JWT_SECRET verification, even when SUPABASE_JWT_SECRET is configured.
+    """
+    private_key = ec.generate_private_key(ec.SECP256R1())
+    wrong_key = ec.generate_private_key(ec.SECP256R1())
+    
+    kid = "3d773d93-03a3-4f91-b84e-7623a579ecc9"
+    headers = {"kid": kid, "alg": "ES256"}
+    payload = {
+        "iss": "https://omeaqucqnmlfvwmuvdel.supabase.co/auth/v1",
+        "sub": "merchant_regression_test",
+        "email": "regression@saas.com",
+        "role": "authenticated",
+        "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+    }
+
+    tampered_token = jwt.encode(payload, wrong_key, algorithm="ES256", headers=headers)
+
+    class MockSigningKey:
+        def __init__(self, key, key_id):
+            self.key = key
+            self.key_id = key_id
+
+    class MockJWKSet:
+        def __init__(self, key, key_id):
+            self.keys = [MockSigningKey(key, key_id)]
+
+    class MockJWKClient:
+        def __init__(self, key, key_id):
+            self.key = key
+            self.key_id = key_id
+
+        def get_signing_key_from_jwt(self, token_str):
+            return MockSigningKey(self.key, self.key_id)
+
+        def get_jwk_set(self):
+            return MockJWKSet(self.key, self.key_id)
+
+    mock_client = MockJWKClient(private_key.public_key(), kid)
+
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    monkeypatch.setattr(settings, "SUPABASE_JWT_SECRET", "super_secret_hmac_key_which_must_not_be_used_for_es256")
+    monkeypatch.setattr(sec, "get_jwks_client", lambda url: mock_client)
+
+    resp = client.get("/auth/me", headers={"Authorization": f"Bearer {tampered_token}"})
+    assert resp.status_code == 401
+    assert "signature" in resp.json()["detail"].lower()
+    
+    # Verify in logs that HMAC verification was NOT triggered
+    assert "HMAC JWT verification failed" not in caplog.text
+    assert "Asymmetric JWKS JWT verification failed" in caplog.text

@@ -16,6 +16,9 @@ _jwks_clients: Dict[str, PyJWKClient] = {}
 # Default project JWKS URL fallback
 DEFAULT_SUPABASE_JWKS_URL = "https://omeaqucqnmlfvwmuvdel.supabase.co/auth/v1/.well-known/jwks.json"
 
+# Supported asymmetric algorithms for Supabase ECC/RSA keys
+ASYMMETRIC_ALGORITHMS = ["ES256", "RS256", "EdDSA", "PS256", "ES384", "ES512", "RS384", "RS512"]
+
 
 def resolve_jwks_url(unverified_token: Optional[str] = None) -> str:
     """
@@ -73,9 +76,10 @@ def get_jwks_client(jwks_url: str) -> PyJWKClient:
 
 def decode_supabase_jwt(token: str) -> dict:
     """
-    Decodes and cryptographically validates a Supabase Auth JWT token supporting:
-    1. Asymmetric signing keys (ECC P-256 / ES256, RSA / RS256) via Supabase JWKS endpoint.
-    2. Symmetric signing keys (HMAC / HS256) via SUPABASE_JWT_SECRET.
+    Decodes and cryptographically validates a Supabase Auth JWT token:
+    1. Asymmetric tokens (ECC P-256 / ES256, RSA / RS256, or tokens with a 'kid' header)
+       are verified STRICTLY against the Supabase JWKS endpoint. They NEVER fall back to HMAC.
+    2. Symmetric tokens (HMAC / HS256) are verified STRICTLY using SUPABASE_JWT_SECRET.
     
     Security Specification:
     - In PRODUCTION: Cryptographically verified signature validation is strictly enforced.
@@ -96,33 +100,33 @@ def decode_supabase_jwt(token: str) -> dict:
 
     alg = unverified_header.get("alg", "HS256")
     kid = unverified_header.get("kid")
-    jwks_url = resolve_jwks_url(token)
-    jwks_client = get_jwks_client(jwks_url) if jwks_url else None
 
-    allowed_algorithms = ["ES256", "RS256", "EdDSA", "PS256", "HS256", "ES384", "ES512", "RS384", "RS512"]
+    # Branch 1: Asymmetric token verification via JWKS (ES256 / RS256 / kid present)
+    is_asymmetric = (alg in ASYMMETRIC_ALGORITHMS) or (kid is not None)
 
-    # 1. Asymmetric verification via JWKS (for ES256, RS256, or when kid / JWKS is present)
-    if jwks_client and (kid is not None or alg in ("ES256", "RS256", "EdDSA", "PS256", "ES384", "ES512")):
+    if is_asymmetric:
+        jwks_url = resolve_jwks_url(token)
         try:
-            # First try matching by kid
+            jwks_client = get_jwks_client(jwks_url)
+            # Try direct key lookup by kid
             try:
                 signing_key = jwks_client.get_signing_key_from_jwt(token)
                 payload = jwt.decode(
                     token,
                     signing_key.key,
-                    algorithms=allowed_algorithms,
+                    algorithms=ASYMMETRIC_ALGORITHMS,
                     options={"verify_aud": False, "verify_exp": True},
                 )
                 return payload
             except Exception as direct_err:
-                # If kid matching failed, try all available JWKS keys
+                # If direct kid matching fails, try all available keys in JWKS set
                 jwk_set = jwks_client.get_jwk_set()
                 for jwk in jwk_set.keys:
                     try:
                         payload = jwt.decode(
                             token,
                             jwk.key,
-                            algorithms=allowed_algorithms,
+                            algorithms=ASYMMETRIC_ALGORITHMS,
                             options={"verify_aud": False, "verify_exp": True},
                         )
                         return payload
@@ -137,49 +141,74 @@ def decode_supabase_jwt(token: str) -> dict:
                 headers={"WWW-Authenticate": "Bearer"},
             )
         except (jwt.InvalidTokenError, PyJWKClientError) as e:
-            logger.warning(f"JWKS signature verification failed: {str(e)}")
+            logger.warning(f"Asymmetric JWKS JWT verification failed: {str(e)}")
             if is_prod:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Invalid authentication token signature.",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
+        except Exception as e:
+            logger.error(f"Error during JWKS token decoding: {str(e)}")
+            if is_prod:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Could not validate credentials.",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
 
-    # 2. Symmetric verification via SUPABASE_JWT_SECRET (HS256)
-    if settings.SUPABASE_JWT_SECRET and alg == "HS256":
-        try:
-            payload = jwt.decode(
-                token,
-                settings.SUPABASE_JWT_SECRET,
-                algorithms=["HS256"],
-                options={"verify_aud": False, "verify_exp": True},
+    # Branch 2: Symmetric token verification via SUPABASE_JWT_SECRET (HS256 ONLY)
+    elif alg == "HS256":
+        if is_prod and not settings.SUPABASE_JWT_SECRET:
+            logger.error("Production security violation: missing SUPABASE_JWT_SECRET for HS256 token.")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Production authentication configuration error: missing SUPABASE_JWT_SECRET for HS256 token.",
             )
-            return payload
-        except jwt.ExpiredSignatureError:
+
+        if settings.SUPABASE_JWT_SECRET:
+            try:
+                payload = jwt.decode(
+                    token,
+                    settings.SUPABASE_JWT_SECRET,
+                    algorithms=["HS256"],
+                    options={"verify_aud": False, "verify_exp": True},
+                )
+                return payload
+            except jwt.ExpiredSignatureError:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Authentication token has expired. Please log in again.",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            except jwt.InvalidTokenError as e:
+                logger.warning(f"HMAC JWT verification failed: {str(e)}")
+                if is_prod:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Invalid authentication token signature.",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+
+    else:
+        # Unknown/unsupported algorithm in header
+        if is_prod:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication token has expired. Please log in again.",
+                detail=f"Unsupported JWT algorithm '{alg}'.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        except jwt.InvalidTokenError as e:
-            logger.warning(f"HMAC JWT verification failed: {str(e)}")
-            if is_prod:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid authentication token signature.",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
 
-    # In Production, reject if neither JWKS nor HMAC signature passed
+    # Branch 3: Production Rejection (Strict Security)
     if is_prod:
-        logger.warning(f"Production JWT verification failed: alg={alg}, kid={kid}, jwks_url={jwks_url}")
+        logger.warning(f"Production JWT verification failed for token: alg={alg}, kid={kid}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication token signature.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Development / Testing Fallback (for offline test suites and mock tokens)
+    # Branch 4: Development / Testing Fallback (for offline test suites and mock tokens)
     try:
         payload = jwt.decode(
             token,
