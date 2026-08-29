@@ -1,4 +1,5 @@
-from typing import Optional
+import re
+from typing import Optional, Dict
 import jwt
 from jwt import PyJWKClient, PyJWKClientError
 from fastapi import Depends, HTTPException, status
@@ -9,49 +10,76 @@ from app.schemas.auth import MerchantIdentity
 
 security_bearer = HTTPBearer(auto_error=False)
 
-# Cached JWKS client for asymmetric key verification
-_jwks_client: Optional[PyJWKClient] = None
-_jwks_url_cached: Optional[str] = None
+# Cached JWKS clients keyed by JWKS URL
+_jwks_clients: Dict[str, PyJWKClient] = {}
+
+# Default project JWKS URL fallback
+DEFAULT_SUPABASE_JWKS_URL = "https://omeaqucqnmlfvwmuvdel.supabase.co/auth/v1/.well-known/jwks.json"
 
 
-def get_jwks_url() -> Optional[str]:
-    """Returns the Supabase JWKS endpoint URL if configured."""
+def resolve_jwks_url(unverified_token: Optional[str] = None) -> str:
+    """
+    Resolves the Supabase JWKS endpoint URL from multiple configuration and token hints:
+    1. Explicit SUPABASE_JWKS_URL setting.
+    2. SUPABASE_URL setting.
+    3. Token 'iss' (issuer) claim if from a Supabase project.
+    4. DATABASE_URL if it contains a Supabase host (db.<ref>.supabase.co).
+    5. Default project JWKS fallback.
+    """
     if settings.SUPABASE_JWKS_URL:
         return settings.SUPABASE_JWKS_URL
+
     if settings.SUPABASE_URL:
-        return f"{settings.SUPABASE_URL.rstrip('/')}/auth/v1/.well-known/jwks.json"
-    return None
+        base = settings.SUPABASE_URL.rstrip("/")
+        if base.endswith("/auth/v1"):
+            return f"{base}/.well-known/jwks.json"
+        return f"{base}/auth/v1/.well-known/jwks.json"
+
+    # Check token issuer claim
+    if unverified_token:
+        try:
+            unverified_payload = jwt.decode(unverified_token, options={"verify_signature": False})
+            iss = unverified_payload.get("iss", "")
+            if "supabase.co" in iss:
+                base_iss = iss.rstrip("/")
+                if base_iss.endswith("/auth/v1"):
+                    return f"{base_iss}/.well-known/jwks.json"
+                return f"{base_iss}/auth/v1/.well-known/jwks.json"
+        except Exception:
+            pass
+
+    # Check DATABASE_URL for Supabase project ref
+    if settings.DATABASE_URL:
+        match = re.search(r"db\.([a-z0-9]+)\.supabase\.co", settings.DATABASE_URL)
+        if match:
+            project_ref = match.group(1)
+            return f"https://{project_ref}.supabase.co/auth/v1/.well-known/jwks.json"
+
+    return DEFAULT_SUPABASE_JWKS_URL
 
 
-def get_jwks_client() -> Optional[PyJWKClient]:
-    """Retrieves or initializes the cached PyJWKClient for JWKS key rotation and caching."""
-    global _jwks_client, _jwks_url_cached
-    url = get_jwks_url()
-    if not url:
-        return None
-    if _jwks_client is None or _jwks_url_cached != url:
-        _jwks_client = PyJWKClient(
-            url,
+def get_jwks_client(jwks_url: str) -> PyJWKClient:
+    """Retrieves or initializes a cached PyJWKClient for a specific JWKS endpoint."""
+    global _jwks_clients
+    if jwks_url not in _jwks_clients:
+        _jwks_clients[jwks_url] = PyJWKClient(
+            jwks_url,
             cache_keys=True,
             max_cached_keys=16,
             lifespan=3600,
         )
-        _jwks_url_cached = url
-    return _jwks_client
+    return _jwks_clients[jwks_url]
 
 
 def decode_supabase_jwt(token: str) -> dict:
     """
-    Decodes and validates a Supabase Auth JWT token supporting both:
+    Decodes and cryptographically validates a Supabase Auth JWT token supporting:
     1. Asymmetric signing keys (ECC P-256 / ES256, RSA / RS256) via Supabase JWKS endpoint.
-    2. Legacy symmetric signing keys (HMAC / HS256) via SUPABASE_JWT_SECRET.
+    2. Symmetric signing keys (HMAC / HS256) via SUPABASE_JWT_SECRET.
     
     Security Specification:
-    - In PRODUCTION: Cryptographically verified Supabase JWT signature validation is strictly required.
-      If JWKS/SUPABASE_URL and SUPABASE_JWT_SECRET are both missing, or if signature verification fails,
-      fails securely with appropriate error.
-    - In DEVELOPMENT / TESTING: If JWKS or SUPABASE_JWT_SECRET is configured, verifies signature.
-      Otherwise, safely validates payload claims (sub, exp) for test-suite / mock mode.
+    - In PRODUCTION: Cryptographically verified signature validation is strictly enforced.
+    - In DEVELOPMENT / TESTING: Verifies signature if keys are available, with safe mock fallback.
     """
     is_prod = settings.ENVIRONMENT.lower() in ("production", "prod")
 
@@ -68,126 +96,63 @@ def decode_supabase_jwt(token: str) -> dict:
 
     alg = unverified_header.get("alg", "HS256")
     kid = unverified_header.get("kid")
-    jwks_client = get_jwks_client()
+    jwks_url = resolve_jwks_url(token)
+    jwks_client = get_jwks_client(jwks_url) if jwks_url else None
 
-    if is_prod:
-        # Require configuration
-        if not jwks_client and not settings.SUPABASE_JWT_SECRET:
-            logger.error("Production security violation: missing SUPABASE_URL / JWKS or SUPABASE_JWT_SECRET in production.")
+    allowed_algorithms = ["ES256", "RS256", "EdDSA", "PS256", "HS256", "ES384", "ES512", "RS384", "RS512"]
+
+    # 1. Asymmetric verification via JWKS (for ES256, RS256, or when kid / JWKS is present)
+    if jwks_client and (kid is not None or alg in ("ES256", "RS256", "EdDSA", "PS256", "ES384", "ES512")):
+        try:
+            # First try matching by kid
+            try:
+                signing_key = jwks_client.get_signing_key_from_jwt(token)
+                payload = jwt.decode(
+                    token,
+                    signing_key.key,
+                    algorithms=allowed_algorithms,
+                    options={"verify_aud": False, "verify_exp": True},
+                )
+                return payload
+            except Exception as direct_err:
+                # If kid matching failed, try all available JWKS keys
+                jwk_set = jwks_client.get_jwk_set()
+                for jwk in jwk_set.keys:
+                    try:
+                        payload = jwt.decode(
+                            token,
+                            jwk.key,
+                            algorithms=allowed_algorithms,
+                            options={"verify_aud": False, "verify_exp": True},
+                        )
+                        return payload
+                    except jwt.InvalidTokenError:
+                        continue
+                raise direct_err
+
+        except jwt.ExpiredSignatureError:
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Production authentication configuration error: missing SUPABASE_URL (JWKS) or SUPABASE_JWT_SECRET.",
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication token has expired. Please log in again.",
+                headers={"WWW-Authenticate": "Bearer"},
             )
-
-        # 1. Asymmetric verification via JWKS (for ES256, RS256, or when kid is present)
-        if jwks_client and (kid is not None or alg in ("ES256", "RS256", "EdDSA", "PS256")):
-            try:
-                signing_key = jwks_client.get_signing_key_from_jwt(token)
-                payload = jwt.decode(
-                    token,
-                    signing_key.key,
-                    algorithms=["ES256", "RS256", "EdDSA", "PS256", "HS256"],
-                    options={"verify_aud": False},
-                )
-                return payload
-            except jwt.ExpiredSignatureError:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Authentication token has expired. Please log in again.",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-            except (jwt.InvalidTokenError, PyJWKClientError) as e:
-                logger.warning(f"Production JWKS JWT verification failed: {str(e)}")
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid authentication token signature.",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-            except Exception as e:
-                logger.error(f"Error during JWKS token decoding: {str(e)}")
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Could not validate credentials.",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-
-        # 2. Symmetric verification via SUPABASE_JWT_SECRET (HS256)
-        if settings.SUPABASE_JWT_SECRET:
-            try:
-                payload = jwt.decode(
-                    token,
-                    settings.SUPABASE_JWT_SECRET,
-                    algorithms=["HS256"],
-                    options={"verify_aud": False},
-                )
-                return payload
-            except jwt.ExpiredSignatureError:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Authentication token has expired. Please log in again.",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-            except jwt.InvalidTokenError as e:
-                logger.warning(f"Production HMAC JWT verification failed: {str(e)}")
+        except (jwt.InvalidTokenError, PyJWKClientError) as e:
+            logger.warning(f"JWKS signature verification failed: {str(e)}")
+            if is_prod:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Invalid authentication token signature.",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
 
-        # If asymmetric token received but JWKS is not configured
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication token signature.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    else:
-        # Development / Testing Mode
-        # Try asymmetric verification if JWKS available
-        if jwks_client and (kid is not None or alg in ("ES256", "RS256", "EdDSA", "PS256")):
-            try:
-                signing_key = jwks_client.get_signing_key_from_jwt(token)
-                payload = jwt.decode(
-                    token,
-                    signing_key.key,
-                    algorithms=["ES256", "RS256", "EdDSA", "PS256", "HS256"],
-                    options={"verify_aud": False},
-                )
-                return payload
-            except jwt.ExpiredSignatureError:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Authentication token has expired. Please log in again.",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-            except Exception:
-                pass  # Fall through to symmetric / mock in dev
-
-        # Try symmetric verification if SUPABASE_JWT_SECRET configured
-        if settings.SUPABASE_JWT_SECRET:
-            try:
-                payload = jwt.decode(
-                    token,
-                    settings.SUPABASE_JWT_SECRET,
-                    algorithms=["HS256"],
-                    options={"verify_aud": False},
-                )
-                return payload
-            except jwt.ExpiredSignatureError:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Authentication token has expired. Please log in again.",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-            except Exception:
-                pass  # Fall through to unverified mock in dev
-
-        # Development / Mock / Testing fallback when no secret is configured or mock tokens used
+    # 2. Symmetric verification via SUPABASE_JWT_SECRET (HS256)
+    if settings.SUPABASE_JWT_SECRET and alg == "HS256":
         try:
             payload = jwt.decode(
                 token,
-                options={"verify_signature": False, "verify_exp": True},
+                settings.SUPABASE_JWT_SECRET,
+                algorithms=["HS256"],
+                options={"verify_aud": False, "verify_exp": True},
             )
             return payload
         except jwt.ExpiredSignatureError:
@@ -197,19 +162,43 @@ def decode_supabase_jwt(token: str) -> dict:
                 headers={"WWW-Authenticate": "Bearer"},
             )
         except jwt.InvalidTokenError as e:
-            logger.warning(f"Invalid JWT token provided in dev mode: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authentication token.",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        except Exception as e:
-            logger.error(f"Error decoding authentication token: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Could not validate credentials.",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+            logger.warning(f"HMAC JWT verification failed: {str(e)}")
+            if is_prod:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid authentication token signature.",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+    # In Production, reject if neither JWKS nor HMAC signature passed
+    if is_prod:
+        logger.warning(f"Production JWT verification failed: alg={alg}, kid={kid}, jwks_url={jwks_url}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token signature.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Development / Testing Fallback (for offline test suites and mock tokens)
+    try:
+        payload = jwt.decode(
+            token,
+            options={"verify_signature": False, "verify_exp": True},
+        )
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication token has expired. Please log in again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.InvalidTokenError as e:
+        logger.warning(f"Invalid JWT token in dev mode: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 
 async def get_current_merchant(

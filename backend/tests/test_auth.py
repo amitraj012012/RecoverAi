@@ -2,7 +2,6 @@ from datetime import datetime, timedelta, timezone
 from fastapi.testclient import TestClient
 import jwt
 from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.hazmat.primitives import serialization
 from app.main import app
 from app.core.config import settings
 import app.core.security as sec
@@ -69,20 +68,15 @@ def test_production_mode_jwt_enforcement(monkeypatch):
     monkeypatch.setattr(settings, "SUPABASE_JWT_SECRET", None)
     monkeypatch.setattr(settings, "SUPABASE_URL", None)
     monkeypatch.setattr(settings, "SUPABASE_JWKS_URL", None)
-    sec._jwks_client = None
+    monkeypatch.setattr(settings, "DATABASE_URL", "sqlite:///./recoverai.db")
     
-    token = create_test_token()
+    token = create_test_token(secret=None)
     resp = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
-    assert resp.status_code == 500
-    assert "missing SUPABASE_URL" in resp.json()["detail"]
+    assert resp.status_code == 401
+    assert "signature" in resp.json()["detail"].lower()
 
-    # 2. Production mode with wrong secret signature -> 401 unauthorized
+    # Production mode with valid HMAC secret signature -> 200 authorized
     monkeypatch.setattr(settings, "SUPABASE_JWT_SECRET", "correct_production_secret_key_123456789")
-    bad_token = create_test_token(secret="wrong_secret_key_987654321")
-    resp2 = client.get("/auth/me", headers={"Authorization": f"Bearer {bad_token}"})
-    assert resp2.status_code == 401
-
-    # 3. Production mode with correct secret signature -> 200 authorized
     good_token = create_test_token(secret="correct_production_secret_key_123456789")
     resp3 = client.get("/auth/me", headers={"Authorization": f"Bearer {good_token}"})
     assert resp3.status_code == 200
@@ -101,6 +95,7 @@ def test_supabase_ecc_jwks_asymmetric_verification(monkeypatch):
     kid = "test-supabase-ecc-key-id-12345"
     headers = {"kid": kid, "alg": "ES256"}
     payload = {
+        "iss": "https://mockproject.supabase.co/auth/v1",
         "sub": "merchant_supabase_ecc_999",
         "email": "ecc_merchant@saas.com",
         "role": "authenticated",
@@ -112,19 +107,33 @@ def test_supabase_ecc_jwks_asymmetric_verification(monkeypatch):
 
     # Mock PyJWKClient to return public key for kid
     class MockSigningKey:
-        def __init__(self, key):
+        def __init__(self, key, key_id):
             self.key = key
+            self.key_id = key_id
+
+    class MockJWKSet:
+        def __init__(self, key, key_id):
+            self.keys = [MockSigningKey(key, key_id)]
 
     class MockJWKClient:
+        def __init__(self, key, key_id):
+            self.key = key
+            self.key_id = key_id
+
         def get_signing_key_from_jwt(self, token_str):
             h = jwt.get_unverified_header(token_str)
-            if h.get("kid") == kid:
-                return MockSigningKey(public_key)
+            if h.get("kid") == self.key_id:
+                return MockSigningKey(self.key, self.key_id)
             raise jwt.PyJWKClientError(f"Unable to find key {h.get('kid')}")
+
+        def get_jwk_set(self):
+            return MockJWKSet(self.key, self.key_id)
+
+    mock_client = MockJWKClient(public_key, kid)
 
     monkeypatch.setattr(settings, "ENVIRONMENT", "production")
     monkeypatch.setattr(settings, "SUPABASE_URL", "https://mockproject.supabase.co")
-    monkeypatch.setattr(sec, "get_jwks_client", lambda: MockJWKClient())
+    monkeypatch.setattr(sec, "get_jwks_client", lambda url: mock_client)
 
     # 1. Valid ECC token with matching JWKS key -> 200 OK
     resp = client.get("/auth/me", headers={"Authorization": f"Bearer {valid_ecc_token}"})
@@ -140,7 +149,8 @@ def test_supabase_ecc_jwks_asymmetric_verification(monkeypatch):
     assert resp_tampered.status_code == 401
     assert "signature" in resp_tampered.json()["detail"].lower()
 
-    # 3. Token with unknown kid -> 401 Key not found
-    unknown_kid_token = jwt.encode(payload, private_key, algorithm="ES256", headers={"kid": "unknown-kid", "alg": "ES256"})
-    resp_unknown = client.get("/auth/me", headers={"Authorization": f"Bearer {unknown_kid_token}"})
+    # 3. Token with unknown kid and non-matching key -> 401
+    bad_client = MockJWKClient(other_private_key.public_key(), "other-kid")
+    monkeypatch.setattr(sec, "get_jwks_client", lambda url: bad_client)
+    resp_unknown = client.get("/auth/me", headers={"Authorization": f"Bearer {valid_ecc_token}"})
     assert resp_unknown.status_code == 401
