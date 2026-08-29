@@ -194,6 +194,7 @@ def seed_database(
 ):
     """
     Idempotent seeding function compatible with Supabase PostgreSQL and local SQLite.
+    Supports targeting any specific merchant_id (e.g. Supabase User UUID).
     """
     print("==================================================================")
     print(" RecoverAI — Synthetic Database Seeder")
@@ -231,80 +232,97 @@ def seed_database(
             print(f"Found {existing_customers} existing customer records for merchant '{merchant_id}'.")
             print("Skipping raw customer/payment re-insertion (idempotent mode).")
         else:
-            print(f"Generating synthetic dataset (1,200 customers, target min {target_payments} payments)...")
-            dataset = generate_synthetic_dataset(
-                num_customers=1200,
-                target_min_payments=target_payments,
-                merchant_id=merchant_id,
-                seed=42,
+            # Check if default benchmark records exist that can be reassigned
+            default_customers = (
+                db.query(Customer).filter(Customer.merchant_id == "merchant_default").count()
+                if merchant_id != "merchant_default"
+                else 0
             )
 
-            print(f"Inserting {len(dataset['customers'])} customer records...")
-            db_customers = [
-                Customer(
-                    id=c["id"],
-                    merchant_id=c["merchant_id"],
-                    demo_name=c["demo_name"],
-                    subscription_value=c["subscription_value"],
-                    tenure=c["tenure"],
-                    activity_score=c["activity_score"],
-                    created_at=datetime.fromisoformat(c["created_at"]),
+            if default_customers > 0 and not clean:
+                print(f"Reassigning {default_customers} benchmark records from 'merchant_default' to '{merchant_id}'...")
+                db.query(Customer).filter(Customer.merchant_id == "merchant_default").update({Customer.merchant_id: merchant_id})
+                db.query(Payment).filter(Payment.merchant_id == "merchant_default").update({Payment.merchant_id: merchant_id})
+                db.query(RecoveryCase).filter(RecoveryCase.merchant_id == "merchant_default").update({RecoveryCase.merchant_id: merchant_id})
+                db.query(RecoveryMemory).filter(RecoveryMemory.merchant_id == "merchant_default").update({RecoveryMemory.merchant_id: merchant_id})
+                db.query(AuditEvent).filter(AuditEvent.merchant_id == "merchant_default").update({AuditEvent.merchant_id: merchant_id})
+                db.commit()
+                print(f"  - Successfully assigned {default_customers} customers and associated records to '{merchant_id}'.")
+            else:
+                print(f"Generating synthetic dataset (1,200 customers, target min {target_payments} payments)...")
+                dataset = generate_synthetic_dataset(
+                    num_customers=1200,
+                    target_min_payments=target_payments,
+                    merchant_id=merchant_id,
+                    seed=42,
                 )
-                for c in dataset["customers"]
-            ]
-            db.bulk_save_objects(db_customers)
-            db.commit()
 
-            print(f"Inserting {len(dataset['payments'])} payment records in batches...")
-            batch_size = 2000
-            db_payments = []
-            for p in dataset["payments"]:
-                db_payments.append(
-                    Payment(
-                        id=p["id"],
-                        merchant_id=p["merchant_id"],
-                        customer_id=p["customer_id"],
-                        amount=p["amount"],
-                        currency=p["currency"],
-                        payment_method=p["payment_method"],
-                        status=p["status"],
-                        failure_reason=p["failure_reason"],
-                        created_at=datetime.fromisoformat(p["created_at"]),
+                print(f"Inserting {len(dataset['customers'])} customer records...")
+                db_customers = [
+                    Customer(
+                        id=c["id"],
+                        merchant_id=c["merchant_id"],
+                        demo_name=c["demo_name"],
+                        subscription_value=c["subscription_value"],
+                        tenure=c["tenure"],
+                        activity_score=c["activity_score"],
+                        created_at=datetime.fromisoformat(c["created_at"]),
                     )
-                )
-                if len(db_payments) >= batch_size:
+                    for c in dataset["customers"]
+                ]
+                db.bulk_save_objects(db_customers)
+                db.commit()
+
+                print(f"Inserting {len(dataset['payments'])} payment records in batches...")
+                batch_size = 2000
+                db_payments = []
+                for p in dataset["payments"]:
+                    db_payments.append(
+                        Payment(
+                            id=p["id"],
+                            merchant_id=p["merchant_id"],
+                            customer_id=p["customer_id"],
+                            amount=p["amount"],
+                            currency=p["currency"],
+                            payment_method=p["payment_method"],
+                            status=p["status"],
+                            failure_reason=p["failure_reason"],
+                            created_at=datetime.fromisoformat(p["created_at"]),
+                        )
+                    )
+                    if len(db_payments) >= batch_size:
+                        db.bulk_save_objects(db_payments)
+                        db.commit()
+                        db_payments = []
+
+                if db_payments:
                     db.bulk_save_objects(db_payments)
                     db.commit()
-                    db_payments = []
 
-            if db_payments:
-                db.bulk_save_objects(db_payments)
-                db.commit()
-
-            print(f"Inserting {len(dataset['recovery_cases'])} recovery cases...")
-            db_cases = []
-            for rc in dataset["recovery_cases"]:
-                db_cases.append(
-                    RecoveryCase(
-                        id=rc["id"],
-                        merchant_id=rc["merchant_id"],
-                        payment_id=rc["payment_id"],
-                        status=rc["status"],
-                        attempt_count=rc["attempt_count"],
-                        expected_revenue=rc["expected_revenue"],
-                        recovered_amount=rc["recovered_amount"],
-                        simulated_recovery_outcome=rc.get("simulated_recovery_outcome"),
-                        created_at=datetime.fromisoformat(rc["created_at"]),
+                print(f"Inserting {len(dataset['recovery_cases'])} recovery cases...")
+                db_cases = []
+                for rc in dataset["recovery_cases"]:
+                    db_cases.append(
+                        RecoveryCase(
+                            id=rc["id"],
+                            merchant_id=rc["merchant_id"],
+                            payment_id=rc["payment_id"],
+                            status=rc["status"],
+                            attempt_count=rc["attempt_count"],
+                            expected_revenue=rc["expected_revenue"],
+                            recovered_amount=rc["recovered_amount"],
+                            simulated_recovery_outcome=rc.get("simulated_recovery_outcome"),
+                            created_at=datetime.fromisoformat(rc["created_at"]),
+                        )
                     )
-                )
-                if len(db_cases) >= batch_size:
+                    if len(db_cases) >= batch_size:
+                        db.bulk_save_objects(db_cases)
+                        db.commit()
+                        db_cases = []
+
+                if db_cases:
                     db.bulk_save_objects(db_cases)
                     db.commit()
-                    db_cases = []
-
-            if db_cases:
-                db.bulk_save_objects(db_cases)
-                db.commit()
 
         # Step 2: Calculate & Populate ML Recovery Probabilities
         if recalculate_ml:
@@ -333,7 +351,7 @@ def seed_database(
         final_memories = db.query(RecoveryMemory).filter(RecoveryMemory.merchant_id == merchant_id).count()
         final_events = db.query(AuditEvent).filter(AuditEvent.merchant_id == merchant_id).count()
 
-        c1024_case = db.query(RecoveryCase).filter(RecoveryCase.id == "rec_c1024_fail").first()
+        c1024_case = db.query(RecoveryCase).filter(RecoveryCase.id == "rec_c1024_fail", RecoveryCase.merchant_id == merchant_id).first()
         c1024_prob = f"{c1024_case.recovery_probability * 100:.1f}%" if c1024_case and c1024_case.recovery_probability else "N/A"
 
         print("==================================================================")
@@ -353,7 +371,7 @@ def seed_database(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="RecoverAI Database Seeder")
-    parser.add_argument("--merchant-id", default=os.getenv("SEED_MERCHANT_ID", "merchant_default"), help="Merchant ID to seed")
+    parser.add_argument("--merchant-id", default=os.getenv("SEED_MERCHANT_ID", "merchant_default"), help="Merchant ID to seed (e.g. Supabase User UUID)")
     parser.add_argument("--clean", action="store_true", help="Clean existing merchant records before reseed")
     parser.add_argument("--drop-all", action="store_true", help="Drop all tables and recreate (destructive)")
     parser.add_argument("--target-payments", type=int, default=10000, help="Target minimum payment count")
