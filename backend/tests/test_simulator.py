@@ -104,10 +104,12 @@ def test_single_case_simulation_forced_escalate():
 def test_batch_simulation_runner():
     db = SessionLocal()
     try:
-        res = run_batch_simulation(db, merchant_id="merchant_default", batch_size=10, scenario="auto")
-        assert res["cases_processed"] > 0
-        assert res["total_recovered_paise"] >= 0
-        assert "simulation_results" in res
+        for size in [10, 25]:
+            res = run_batch_simulation(db, merchant_id="merchant_default", batch_size=size, scenario="auto")
+            assert res["cases_processed"] > 0
+            assert res["total_recovered_paise"] >= 0
+            assert "simulation_results" in res
+            assert len(res["simulation_results"]) == res["cases_processed"]
     finally:
         db.close()
 

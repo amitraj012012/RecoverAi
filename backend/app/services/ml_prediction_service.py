@@ -8,14 +8,19 @@ from app.models.payment import Payment
 from app.models.customer import Customer
 from app.models.recovery_case import RecoveryCase
 
-# Paths to trained model artifact and metadata (v2)
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../"))
-MODEL_PATH_V2 = os.path.join(BASE_DIR, "data", "models", "recovery_prediction_model_v2.joblib")
-META_PATH_V2 = os.path.join(BASE_DIR, "data", "models", "model_metadata_v2.json")
+def _find_file(filename: str) -> Optional[str]:
+    search_dirs = [
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../data/models")),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "../../data/models")),
+        os.path.abspath(os.path.join(os.getcwd(), "data/models")),
+        os.path.abspath(os.path.join(os.getcwd(), "../data/models")),
+    ]
+    for d in search_dirs:
+        path = os.path.join(d, filename)
+        if os.path.exists(path):
+            return path
+    return None
 
-# Fallback to v1 if v2 is not present
-MODEL_PATH_V1 = os.path.join(BASE_DIR, "data", "models", "recovery_prediction_model_v1.joblib")
-META_PATH_V1 = os.path.join(BASE_DIR, "data", "models", "model_metadata.json")
 
 _cached_model = None
 _cached_metadata = None
@@ -24,23 +29,27 @@ _cached_metadata = None
 def get_model():
     global _cached_model
     if _cached_model is None:
-        if os.path.exists(MODEL_PATH_V2):
-            _cached_model = joblib.load(MODEL_PATH_V2)
-        elif os.path.exists(MODEL_PATH_V1):
-            _cached_model = joblib.load(MODEL_PATH_V1)
+        p2 = _find_file("recovery_prediction_model_v2.joblib")
+        p1 = _find_file("recovery_prediction_model_v1.joblib")
+        if p2 and os.path.exists(p2):
+            _cached_model = joblib.load(p2)
+        elif p1 and os.path.exists(p1):
+            _cached_model = joblib.load(p1)
         else:
-            raise FileNotFoundError(f"Model artifact not found at {MODEL_PATH_V2}. Please train the model first.")
+            raise FileNotFoundError("Model artifact recovery_prediction_model_v2.joblib not found. Please train the model first.")
     return _cached_model
 
 
 def get_metadata() -> Dict[str, Any]:
     global _cached_metadata
     if _cached_metadata is None:
-        if os.path.exists(META_PATH_V2):
-            with open(META_PATH_V2, "r", encoding="utf-8") as f:
+        p2 = _find_file("model_metadata_v2.json")
+        p1 = _find_file("model_metadata.json")
+        if p2 and os.path.exists(p2):
+            with open(p2, "r", encoding="utf-8") as f:
                 _cached_metadata = json.load(f)
-        elif os.path.exists(META_PATH_V1):
-            with open(META_PATH_V1, "r", encoding="utf-8") as f:
+        elif p1 and os.path.exists(p1):
+            with open(p1, "r", encoding="utf-8") as f:
                 _cached_metadata = json.load(f)
         else:
             _cached_metadata = {"model_version": "logistic-regression-v2"}
@@ -193,6 +202,7 @@ def predict_recovery(
     payment_id: Optional[str] = None,
     recovery_case_id: Optional[str] = None,
     merchant_id: Optional[str] = None,
+    commit: bool = True,
 ) -> Dict[str, Any]:
     """
     Computes ML recovery probability for a given payment or recovery case using v2 model.
@@ -242,8 +252,9 @@ def predict_recovery(
     # Persist probability to recovery case
     if rec_case:
         rec_case.recovery_probability = prob_clamped
-        db.commit()
-        db.refresh(rec_case)
+        if commit:
+            db.commit()
+            db.refresh(rec_case)
 
     return {
         "payment_id": payment.id,

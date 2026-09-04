@@ -30,6 +30,7 @@ def simulate_case_recovery(
     recovery_case_id: str,
     merchant_id: str,
     scenario: str = "auto",  # 'auto', 'force_success', 'force_fail', 'force_escalate'
+    commit: bool = True,
 ) -> Dict[str, Any]:
     """
     Executes an autonomous recovery simulation loop for a single case.
@@ -59,10 +60,9 @@ def simulate_case_recovery(
     # Step 1: Transition to ANALYZING
     if validate_state_transition(rec_case.status, "ANALYZING"):
         rec_case.status = "ANALYZING"
-        db.commit()
 
     # Step 2: ML Recovery Probability (Phase 5)
-    ml_pred = predict_recovery(db, recovery_case_id=rec_case.id, merchant_id=merchant_id)
+    ml_pred = predict_recovery(db, recovery_case_id=rec_case.id, merchant_id=merchant_id, commit=False)
     ml_prob = ml_pred["recovery_probability"]
 
     # Step 3: AI Recovery Agent Decision (with Memory Retrieval)
@@ -90,7 +90,6 @@ def simulate_case_recovery(
     rec_case.selected_strategy = selected_strategy
     if validate_state_transition(rec_case.status, "ACTION_SELECTED"):
         rec_case.status = "ACTION_SELECTED"
-        db.commit()
 
     # Step 5: Execute Approved Simulator Tool
     if scenario == "force_success":
@@ -126,7 +125,6 @@ def simulate_case_recovery(
 
     if validate_state_transition(rec_case.status, "ACTION_EXECUTED"):
         rec_case.status = "ACTION_EXECUTED"
-        db.commit()
 
     # Step 7: Transition to final state based on outcome
     if selected_strategy == "ESCALATE_TO_HUMAN":
@@ -179,7 +177,6 @@ def simulate_case_recovery(
         created_at=datetime.now(timezone.utc),
     )
     db.add(audit_event)
-    db.commit()
 
     # Step 10: Persist Experience to Adaptive Agent Memory
     record_recovery_experience(
@@ -192,9 +189,12 @@ def simulate_case_recovery(
         is_recovered=is_recovered,
         recovered_amount_paise=rec_case.recovered_amount,
         attempt_count=rec_case.attempt_count,
+        commit=False,
     )
 
-    db.refresh(rec_case)
+    if commit:
+        db.commit()
+        db.refresh(rec_case)
 
     return {
         "recovery_case_id": rec_case.id,
@@ -251,6 +251,7 @@ def run_batch_simulation(
                 recovery_case_id=c.id,
                 merchant_id=merchant_id,
                 scenario=scenario,
+                commit=False,
             )
             results.append(res)
             if res["is_recovered"]:
@@ -260,6 +261,13 @@ def run_batch_simulation(
                 total_escalated_count += 1
         except Exception:
             continue
+
+    # Commit all batch actions and transitions atomically
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
     return {
         "batch_size_requested": batch_size,

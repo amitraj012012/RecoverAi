@@ -14,6 +14,16 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing database tables...")
     init_db()
     logger.info("Database initialized successfully.")
+    
+    # Pre-warm ML model & metadata cache to eliminate cold-start latency
+    try:
+        from app.services.ml_prediction_service import get_model, get_metadata
+        get_model()
+        get_metadata()
+        logger.info("ML model and metadata cache warmed up successfully.")
+    except Exception as e:
+        logger.warning(f"ML model warm-up notice: {str(e)}")
+        
     yield
 
 

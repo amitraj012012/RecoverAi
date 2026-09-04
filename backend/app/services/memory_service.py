@@ -52,6 +52,7 @@ def record_recovery_experience(
     is_recovered: bool,
     recovered_amount_paise: int,
     attempt_count: int,
+    commit: bool = True,
 ) -> Optional[RecoveryMemory]:
     """
     Persists a recovery outcome into adaptive agent memory strictly AFTER simulator outcome settles.
@@ -116,8 +117,9 @@ def record_recovery_experience(
         )
     )
 
-    db.commit()
-    db.refresh(memory)
+    if commit:
+        db.commit()
+        db.refresh(memory)
     return memory
 
 
