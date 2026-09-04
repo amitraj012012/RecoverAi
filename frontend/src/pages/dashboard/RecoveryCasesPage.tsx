@@ -82,7 +82,7 @@ export const RecoveryCasesPage: React.FC = () => {
         <div>
           <h2 className="text-xl font-bold text-[#0F172A]">Recovery Cases Operational Console</h2>
           <p className="text-xs text-[#64748B] mt-0.5">
-            ML-scored recovery pipeline ({total.toLocaleString()} active cases • Bounded AI Recovery Agent)
+            ML-scored recovery pipeline ({total.toLocaleString()} cases • Bounded AI Recovery Agent)
           </p>
         </div>
 
@@ -140,7 +140,7 @@ export const RecoveryCasesPage: React.FC = () => {
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
                   {cases.map((c) => {
-                    const probPercent = Math.round((c.recoveryProbability ?? 0.878) * 100);
+                    const probPercent = Math.round(c.recoveryProbability ?? 70);
                     const isTerminal = c.status === 'RECOVERED' || c.status === 'ESCALATED';
 
                     return (
@@ -353,7 +353,7 @@ export const RecoveryCasesPage: React.FC = () => {
                 <div className="text-2xl font-bold text-[#0F172A]">
                   {selectedExplainCase.prediction
                     ? `${selectedExplainCase.prediction.recovery_probability_percentage}%`
-                    : `${Math.round((selectedExplainCase.recoveryProbability ?? 0.878) * 100)}%`}
+                    : `${Math.round(selectedExplainCase.recoveryProbability ?? 70)}%`}
                 </div>
               </div>
               <div className="text-right">

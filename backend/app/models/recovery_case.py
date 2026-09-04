@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from typing import Optional
 from sqlalchemy import Column, String, Integer, Float, DateTime, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from app.database.session import Base
@@ -24,6 +25,10 @@ class RecoveryCase(Base):
     # Relationships
     payment = relationship("Payment", back_populates="recovery_case")
     actions = relationship("RecoveryAction", back_populates="recovery_case", cascade="all, delete-orphan", order_by="RecoveryAction.executed_at")
+
+    @property
+    def customer_id(self) -> Optional[str]:
+        return self.payment.customer_id if self.payment else None
 
 
 Index("idx_recovery_cases_merchant_status", RecoveryCase.merchant_id, RecoveryCase.status)

@@ -170,7 +170,7 @@ export async function fetchRecoveryCases(
       return {
         items: data.items.map((item: any) => ({
           id: item.id,
-          customerId: item.customer?.id || item.payment?.customer_id || 'Unknown',
+          customerId: item.customer_id || item.customer?.id || item.payment?.customer_id || 'Unknown',
           customerName: item.customer?.demo_name || 'Enterprise Customer',
           amount: Math.round(item.expected_revenue / 100),
           currency: item.payment?.currency || 'INR',

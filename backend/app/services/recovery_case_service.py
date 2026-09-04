@@ -1,10 +1,10 @@
 from typing import Optional, List, Tuple
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.models.recovery_case import RecoveryCase
 
 
 def get_recovery_case_by_id(db: Session, case_id: str, merchant_id: Optional[str] = None) -> Optional[RecoveryCase]:
-    query = db.query(RecoveryCase).filter(RecoveryCase.id == case_id)
+    query = db.query(RecoveryCase).options(joinedload(RecoveryCase.payment)).filter(RecoveryCase.id == case_id)
     if merchant_id:
         query = query.filter(RecoveryCase.merchant_id == merchant_id)
     return query.first()
@@ -18,7 +18,7 @@ def list_recovery_cases(
     page: int = 1,
     limit: int = 50,
 ) -> Tuple[List[RecoveryCase], int]:
-    query = db.query(RecoveryCase)
+    query = db.query(RecoveryCase).options(joinedload(RecoveryCase.payment))
     if merchant_id:
         query = query.filter(RecoveryCase.merchant_id == merchant_id)
     if status:

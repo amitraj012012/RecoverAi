@@ -21,6 +21,7 @@ class RecoveryCaseCreate(RecoveryCaseBase):
 class RecoveryCaseResponse(RecoveryCaseBase):
     id: str
     merchant_id: str
+    customer_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
