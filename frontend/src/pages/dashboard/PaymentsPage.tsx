@@ -39,7 +39,7 @@ export const PaymentsPage: React.FC = () => {
         <div>
           <h2 className="text-xl font-bold text-[#0F172A]">Payments Ingestion Monitor</h2>
           <p className="text-xs text-[#64748B] mt-0.5">
-            Real-time feed of synthetic payment transactions ({total.toLocaleString()} records stored)
+            Synthetic payment transaction records ({total.toLocaleString()} records stored)
           </p>
         </div>
 
@@ -106,22 +106,22 @@ export const PaymentsPage: React.FC = () => {
                           {p.id}
                         </td>
                         <td className="px-5 py-3.5 font-mono text-[11px] text-[#2563EB]">
-                          {p.customer_id}
+                          {p.customerId}
                         </td>
                         <td className="px-5 py-3.5 font-semibold text-[#0F172A]">
-                          ₹{(p.amount / 100).toLocaleString()}
+                          ₹{p.amount.toLocaleString()}
                         </td>
                         <td className="px-5 py-3.5 uppercase text-[10px] font-medium text-slate-600">
-                          {p.payment_method}
+                          {p.paymentMethod}
                         </td>
                         <td className="px-5 py-3.5">
-                          <StatusBadge status={p.status === 'failed' ? 'AT_RISK' : 'RECOVERED'} />
+                          <StatusBadge status={p.status === 'failed' ? 'FAILED' : 'SUCCESSFUL'} />
                         </td>
                         <td className="px-5 py-3.5 text-[#64748B] max-w-xs truncate">
-                          {p.failure_reason || '—'}
+                          {p.failureReason || '—'}
                         </td>
                         <td className="px-5 py-3.5 text-[#64748B] text-[11px] whitespace-nowrap">
-                          {new Date(p.created_at).toLocaleString()}
+                          {new Date(p.createdAt).toLocaleString()}
                         </td>
                       </tr>
                     ))

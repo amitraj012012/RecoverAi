@@ -11,6 +11,14 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, size = 'sm' })
 
   const getStyle = () => {
     switch (normalized) {
+      case 'SUCCESS':
+      case 'SUCCESSFUL':
+      case 'SETTLED':
+        return {
+          bg: 'bg-emerald-50 text-[#10B981] border-emerald-200',
+          dot: 'bg-[#10B981]',
+          label: 'Successful',
+        };
       case 'RECOVERED':
         return {
           bg: 'bg-emerald-50 text-[#10B981] border-emerald-200',
