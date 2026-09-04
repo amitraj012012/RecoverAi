@@ -58,9 +58,9 @@ export const DashboardLayout: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] flex flex-col lg:flex-row">
+    <div className="h-screen bg-[#F8FAFC] flex flex-col lg:flex-row overflow-hidden">
       {/* Mobile Top Header */}
-      <div className="lg:hidden bg-[#0B1220] text-white px-4 py-3 flex items-center justify-between border-b border-slate-800 sticky top-0 z-30">
+      <div className="lg:hidden bg-[#0B1220] text-white px-4 py-3 flex items-center justify-between border-b border-slate-800 sticky top-0 z-30 shrink-0">
         <div className="flex items-center space-x-2.5">
           <div className="w-8 h-8 rounded-lg bg-[#2563EB] flex items-center justify-center font-bold text-white text-base">
             R
@@ -75,15 +75,23 @@ export const DashboardLayout: React.FC = () => {
         </button>
       </div>
 
+      {/* Mobile Backdrop */}
+      {mobileMenuOpen && (
+        <div
+          className="fixed inset-0 bg-slate-900/60 z-30 lg:hidden"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
+
       {/* Sidebar Navigation */}
       <aside
-        className={`fixed inset-y-0 left-0 z-20 w-64 bg-[#0B1220] text-white flex flex-col justify-between transition-transform transform lg:translate-x-0 lg:static lg:inset-auto ${
+        className={`fixed inset-y-0 left-0 z-40 w-64 bg-[#0B1220] text-white flex flex-col justify-between transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static lg:h-screen lg:shrink-0 ${
           mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        {/* Brand Header */}
-        <div>
-          <div className="hidden lg:flex items-center justify-between px-6 h-16 border-b border-slate-800">
+        {/* Brand Header & Navigation */}
+        <div className="flex flex-col min-h-0 flex-1">
+          <div className="hidden lg:flex items-center justify-between px-6 h-16 border-b border-slate-800 shrink-0">
             <div className="flex items-center space-x-3">
               <div className="w-9 h-9 rounded-lg bg-[#2563EB] flex items-center justify-center font-bold text-white text-lg shadow-sm">
                 R
@@ -97,8 +105,8 @@ export const DashboardLayout: React.FC = () => {
             </div>
           </div>
 
-          {/* Navigation Links */}
-          <nav className="px-3 py-4 space-y-1">
+          {/* Navigation Links (Scrollable if viewport is tiny) */}
+          <nav className="px-3 py-4 space-y-1 overflow-y-auto flex-1">
             {navigationItems.map((item) => {
               const Icon = item.icon;
               const isActive = location.pathname === item.href;
@@ -121,8 +129,8 @@ export const DashboardLayout: React.FC = () => {
           </nav>
         </div>
 
-        {/* User Footer & Logout */}
-        <div className="p-4 border-t border-slate-800 space-y-3">
+        {/* User Footer & Logout (Pinned to Sidebar Bottom) */}
+        <div className="p-4 border-t border-slate-800 space-y-3 shrink-0 bg-[#0B1220]">
           {isMockMode && (
             <div className="px-2.5 py-1.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-[10px] font-medium text-amber-300 flex items-center space-x-1.5">
               <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
@@ -151,9 +159,9 @@ export const DashboardLayout: React.FC = () => {
         </div>
       </aside>
 
-      {/* Main Workspace Viewport */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <header className="hidden lg:flex items-center justify-between px-8 h-16 bg-white border-b border-[#E2E8F0] sticky top-0 z-10">
+      {/* Main Workspace Viewport (Independently Scrollable) */}
+      <main className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto">
+        <header className="hidden lg:flex items-center justify-between px-8 h-16 bg-white border-b border-[#E2E8F0] sticky top-0 z-10 shrink-0">
           <div>
             <span className="text-xs text-[#64748B] font-medium">Active Workspace</span>
             <h1 className="text-sm font-bold text-[#0F172A] capitalize">
@@ -176,7 +184,7 @@ export const DashboardLayout: React.FC = () => {
           </div>
         </header>
 
-        <div className="p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto space-y-6">
+        <div className="p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto space-y-6 flex-1">
           <Outlet />
         </div>
       </main>
