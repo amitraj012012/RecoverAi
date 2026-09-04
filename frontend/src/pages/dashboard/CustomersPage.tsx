@@ -78,35 +78,35 @@ export const CustomersPage: React.FC = () => {
                         {c.id}
                       </td>
                       <td className="px-5 py-3.5 font-semibold text-[#0F172A]">
-                        {c.demo_name}
+                        {c.demoName || '—'}
                       </td>
                       <td className="px-5 py-3.5 font-semibold text-[#0F172A]">
-                        ₹{(c.subscription_value / 100).toLocaleString()}/mo
+                        ₹{(c.subscriptionValue ?? 0).toLocaleString()}/mo
                       </td>
                       <td className="px-5 py-3.5 text-slate-600">
-                        {c.tenure} months
+                        {c.tenure === 1 ? '1 month' : `${c.tenure ?? 0} months`}
                       </td>
                       <td className="px-5 py-3.5">
                         <div className="flex items-center space-x-2">
                           <span className="font-semibold text-[#0F172A]">
-                            {Math.round(c.activity_score * 100)}%
+                            {Math.round((c.activityScore ?? 0) * 100)}%
                           </span>
                           <div className="w-16 bg-slate-100 rounded-full h-1.5 overflow-hidden">
                             <div
                               className={`h-1.5 rounded-full ${
-                                c.activity_score > 0.7
+                                (c.activityScore ?? 0) > 0.7
                                   ? 'bg-[#10B981]'
-                                  : c.activity_score > 0.4
+                                  : (c.activityScore ?? 0) > 0.4
                                   ? 'bg-[#2563EB]'
                                   : 'bg-[#F59E0B]'
                               }`}
-                              style={{ width: `${c.activity_score * 100}%` }}
+                              style={{ width: `${(c.activityScore ?? 0) * 100}%` }}
                             />
                           </div>
                         </div>
                       </td>
                       <td className="px-5 py-3.5 text-[#64748B] text-[11px] whitespace-nowrap">
-                        {new Date(c.created_at).toLocaleDateString()}
+                        {c.createdAt ? new Date(c.createdAt).toLocaleDateString() : '—'}
                       </td>
                     </tr>
                   ))}
