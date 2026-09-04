@@ -1,6 +1,7 @@
 import json
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from app.database.session import get_db
 from app.core.security import get_current_merchant
@@ -48,13 +49,20 @@ async def get_ai_decisions_endpoint(
 ):
     """
     Returns audit trail logs of AI decisions and tool executions for the merchant.
+    Includes autonomous recovery decisions from both ai_recovery_agent_v1 (RECOVERY_*)
+    and autonomous_simulator_engine_v1 (SIMULATOR_*).
     Excludes memory-learning log events (AGENT_MEMORY_LEARNED).
     """
     events = (
         db.query(AuditEvent)
         .filter(
             AuditEvent.merchant_id == merchant.merchant_id,
-            AuditEvent.event_type.like("RECOVERY_%"),
+            or_(
+                AuditEvent.event_type.like("RECOVERY_%"),
+                AuditEvent.event_type.like("SIMULATOR_%"),
+                AuditEvent.actor.in_(["ai_recovery_agent_v1", "autonomous_simulator_engine_v1"]),
+            ),
+            AuditEvent.event_type != "AGENT_MEMORY_LEARNED",
         )
         .order_by(AuditEvent.created_at.desc())
         .limit(limit)

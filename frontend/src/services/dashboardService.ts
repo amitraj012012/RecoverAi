@@ -251,7 +251,9 @@ export async function fetchAiDecisions(limit = 50): Promise<any[]> {
             }
             return (
               ev.event_type?.startsWith('RECOVERY_') ||
+              ev.event_type?.startsWith('SIMULATOR_') ||
               ev.actor === 'ai_recovery_agent_v1' ||
+              ev.actor === 'autonomous_simulator_engine_v1' ||
               ev.recovery_case_id?.startsWith('rec_') ||
               ev.metadata?.recovery_case_id?.startsWith('rec_')
             );
@@ -274,7 +276,7 @@ export async function fetchAiDecisions(limit = 50): Promise<any[]> {
 
             const strategy =
               meta.selected_strategy ||
-              ev.event_type?.replace('RECOVERY_', '') ||
+              ev.event_type?.replace('RECOVERY_', '').replace('SIMULATOR_', '') ||
               'RECOVERY_ACTION';
 
             const customerId =

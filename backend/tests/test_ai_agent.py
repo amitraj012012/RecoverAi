@@ -169,11 +169,61 @@ def test_api_recover_case_endpoint():
 def test_api_ai_decisions_feed():
     with TestClient(app) as client:
         headers = get_auth_header()
-        res = client.get("/ai/decisions?limit=10", headers=headers)
+        res = client.get("/ai/decisions?limit=50", headers=headers)
         assert res.status_code == 200
         data = res.json()
         assert isinstance(data, list)
         assert len(data) > 0
+
+        # Verify no memory-learning events leaked into decisions
+        for item in data:
+            assert item["event_type"] != "AGENT_MEMORY_LEARNED"
+            assert not str(item["id"]).startswith("aud_mem_")
+            assert item["actor"] in ["ai_recovery_agent_v1", "autonomous_simulator_engine_v1", "system", "ml_engine", "memory_engine"]
+
+        event_types = [item["event_type"] for item in data]
+        has_decision_event = any(t.startswith("RECOVERY_") or t.startswith("SIMULATOR_") for t in event_types)
+        assert has_decision_event, "Decisions feed should include RECOVERY_* or SIMULATOR_* decision events."
+
+
+def test_api_ai_decisions_multi_attempt_lifecycle_c1910():
+    db = SessionLocal()
+    try:
+        from app.services.simulator_service import simulate_case_recovery
+        # Reset and simulate multi-attempt lifecycle for rec_c1910_2
+        case = db.query(RecoveryCase).filter(RecoveryCase.id == "rec_c1910_2").first()
+        if case:
+            case.status = "FAILED"
+            case.attempt_count = 0
+            case.recovered_amount = 0
+            case.selected_strategy = None
+            db.commit()
+
+        # Attempt 1: RETRY_PAYMENT -> FAILED
+        res1 = simulate_case_recovery(db, recovery_case_id="rec_c1910_2", merchant_id="merchant_default", scenario="force_fail")
+        assert res1["is_recovered"] is False
+
+        # Attempt 2: ALTERNATE_PAYMENT_METHOD -> SUCCESS
+        res2 = simulate_case_recovery(db, recovery_case_id="rec_c1910_2", merchant_id="merchant_default", scenario="force_success")
+        assert res2["is_recovered"] is True
+
+        with TestClient(app) as client:
+            headers = get_auth_header()
+            res = client.get("/ai/decisions?limit=50", headers=headers)
+            assert res.status_code == 200
+            data = res.json()
+
+            c1910_events = [
+                d for d in data
+                if d.get("recovery_case_id") == "rec_c1910_2" or d.get("metadata", {}).get("customer_id") == "C1910"
+            ]
+            assert len(c1910_events) >= 2, "Both Attempt 1 and Attempt 2 should be returned in decisions feed."
+
+            strategies = [d.get("metadata", {}).get("selected_strategy") or d.get("event_type") for d in c1910_events]
+            assert any("RETRY_PAYMENT" in s for s in strategies)
+            assert any("ALTERNATE_PAYMENT_METHOD" in s for s in strategies)
+    finally:
+        db.close()
 
 
 def test_api_recovery_workflow_inspection():
