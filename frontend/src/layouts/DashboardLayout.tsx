@@ -36,6 +36,27 @@ export const DashboardLayout: React.FC = () => {
     await signOut();
   };
 
+  const getWorkspaceTitle = (): string => {
+    if (!user?.email) return 'Enterprise Workspace';
+    const namePart = user.email.split('@')[0].replace(/[^a-zA-Z0-9]/g, ' ').trim();
+    if (!namePart) return 'Enterprise Workspace';
+    return `${namePart.charAt(0).toUpperCase() + namePart.slice(1)} Workspace`;
+  };
+
+  const getShortMerchantId = (): string => {
+    if (!user?.id) return 'Active';
+    if (user.id.length > 18) {
+      return `${user.id.slice(0, 8)}...${user.id.slice(-4)}`;
+    }
+    return user.id;
+  };
+
+  const getUserInitials = (): string => {
+    if (!user?.email) return 'MW';
+    const clean = user.email.replace(/[^a-zA-Z0-9]/g, '');
+    return clean.slice(0, 2).toUpperCase() || 'MW';
+  };
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] flex flex-col lg:flex-row">
       {/* Mobile Top Header */}
@@ -115,7 +136,7 @@ export const DashboardLayout: React.FC = () => {
                 {user?.email || 'merchant@demo.com'}
               </div>
               <div className="text-[10px] font-mono text-slate-400 truncate">
-                {user?.id?.slice(0, 16) || 'merchant_default'}
+                ID: {getShortMerchantId()}
               </div>
             </div>
 
@@ -142,11 +163,15 @@ export const DashboardLayout: React.FC = () => {
 
           <div className="flex items-center space-x-4">
             <div className="text-right">
-              <div className="text-xs font-semibold text-[#0F172A]">Enterprise Cloud SaaS</div>
-              <div className="text-[10px] text-[#64748B]">Merchant ID: merchant_default</div>
+              <div className="text-xs font-semibold text-[#0F172A]">
+                {getWorkspaceTitle()}
+              </div>
+              <div className="text-[10px] text-[#64748B] font-mono">
+                Merchant ID: {getShortMerchantId()}
+              </div>
             </div>
-            <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center font-bold text-xs text-[#2563EB]">
-              EC
+            <div className="w-8 h-8 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center font-bold text-xs text-[#2563EB]">
+              {getUserInitials()}
             </div>
           </div>
         </header>
