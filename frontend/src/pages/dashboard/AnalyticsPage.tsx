@@ -70,7 +70,7 @@ export const AnalyticsPage: React.FC = () => {
                     <td className="px-4 py-3 font-semibold text-[#0F172A]">{fr.failure_reason}</td>
                     <td className="px-4 py-3 text-[#64748B]">{fr.count.toLocaleString()}</td>
                     <td className="px-4 py-3 font-semibold text-[#F59E0B]">
-                      ₹{(fr.revenue_at_risk_paise / 100000).toFixed(2)}L
+                      ₹{(fr.revenue_at_risk_paise / 10000000).toFixed(2)}L
                     </td>
                     <td className="px-4 py-3 font-medium text-slate-700">{fr.percentage_of_risk}%</td>
                   </tr>
@@ -104,7 +104,7 @@ export const AnalyticsPage: React.FC = () => {
                       {pm.payment_method}
                     </td>
                     <td className="px-4 py-3 text-[#64748B]">
-                      ₹{(pm.total_volume_paise / 100000).toFixed(1)}L ({pm.total_count})
+                      ₹{(pm.total_volume_paise / 10000000).toFixed(1)}L ({pm.total_count})
                     </td>
                     <td className="px-4 py-3 font-semibold text-[#F59E0B]">
                       {pm.failed_count}
