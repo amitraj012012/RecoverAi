@@ -41,6 +41,7 @@ def test_memory_recording_and_versioning():
             case.status = "FAILED"
             case.attempt_count = 0
             case.recovered_amount = 0
+            db.query(RecoveryMemory).filter(RecoveryMemory.recovery_case_id == "rec_c1024_fail").delete()
             db.commit()
 
         initial_memories = db.query(RecoveryMemory).filter(RecoveryMemory.merchant_id == "merchant_default").count()

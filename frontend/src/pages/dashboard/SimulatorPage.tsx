@@ -70,6 +70,7 @@ export const SimulatorPage: React.FC = () => {
       });
       await loadStatus();
     } catch (err: any) {
+      setLastSingleResult(null);
       setNotification({ text: err.message || 'Simulation on C1024 failed.', type: 'error' });
     } finally {
       setSingleRunning(false);

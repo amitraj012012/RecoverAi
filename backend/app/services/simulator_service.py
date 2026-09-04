@@ -53,8 +53,25 @@ def simulate_case_recovery(
     if not customer:
         raise ValueError(f"Customer '{payment.customer_id}' not found.")
 
-    # Guard: Terminal cases cannot be recovered again
-    if rec_case.status in ["RECOVERED", "ESCALATED"]:
+    # For judge demo sandbox (rec_c1024_fail), automatically recycle the case state so presets can be tested repeatedly
+    if recovery_case_id == "rec_c1024_fail":
+        rec_case.status = "FAILED"
+        rec_case.attempt_count = 0
+        rec_case.recovered_amount = 0
+        rec_case.selected_strategy = None
+        # Clean up prior demo actions/audits/memories strictly for rec_c1024_fail
+        db.query(RecoveryAction).filter(RecoveryAction.recovery_case_id == "rec_c1024_fail").delete()
+        db.query(RecoveryMemory).filter(
+            RecoveryMemory.merchant_id == merchant_id,
+            RecoveryMemory.recovery_case_id == "rec_c1024_fail",
+        ).delete()
+        db.query(AuditEvent).filter(
+            AuditEvent.merchant_id == merchant_id,
+            AuditEvent.entity_id == "rec_c1024_fail",
+            AuditEvent.actor.in_(["ai_recovery_agent_v1", "autonomous_simulator_engine_v1", "adaptive_memory_engine_v1"]),
+        ).delete()
+    elif rec_case.status in ["RECOVERED", "ESCALATED"]:
+        # Guard: Production / batch terminal cases cannot be rerun once settled
         raise ValueError(f"Recovery case '{recovery_case_id}' is already in terminal state '{rec_case.status}'.")
 
     # Step 1: Transition to ANALYZING

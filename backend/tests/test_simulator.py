@@ -126,11 +126,40 @@ def test_simulator_status_metrics():
         db.close()
 
 
+def test_c1024_consecutive_preset_switching():
+    db = SessionLocal()
+    try:
+        # Run 1: Force Success
+        res1 = simulate_case_recovery(db, recovery_case_id="rec_c1024_fail", merchant_id="merchant_default", scenario="force_success")
+        assert res1["current_status"] == "RECOVERED"
+        assert res1["is_recovered"] is True
+
+        # Run 2: Immediately Force Fail on the already-recovered C1024 demo case
+        res2 = simulate_case_recovery(db, recovery_case_id="rec_c1024_fail", merchant_id="merchant_default", scenario="force_fail")
+        assert res2["current_status"] == "ACTION_EXECUTED"
+        assert res2["is_recovered"] is False
+
+        # Run 3: Immediately Force Escalate
+        res3 = simulate_case_recovery(db, recovery_case_id="rec_c1024_fail", merchant_id="merchant_default", scenario="force_escalate")
+        assert res3["current_status"] == "ESCALATED"
+        assert res3["selected_strategy"] == "ESCALATE_TO_HUMAN"
+
+        # Run 4: Immediately Auto (Stochastic ML)
+        res4 = simulate_case_recovery(db, recovery_case_id="rec_c1024_fail", merchant_id="merchant_default", scenario="auto")
+        assert res4["customer_id"] == "C1024"
+        assert res4["original_amount_paise"] == 199900
+    finally:
+        db.close()
+
+
 def test_duplicate_simulation_prevention():
     db = SessionLocal()
     try:
-        case = db.query(RecoveryCase).filter(RecoveryCase.status == "RECOVERED").first()
+        # Verify non-C1024 cases remain strictly protected against terminal state rerun
+        case = db.query(RecoveryCase).filter(RecoveryCase.id != "rec_c1024_fail").first()
         if case:
+            case.status = "RECOVERED"
+            db.commit()
             with pytest.raises(ValueError, match="already in terminal state"):
                 simulate_case_recovery(db, recovery_case_id=case.id, merchant_id="merchant_default")
     finally:

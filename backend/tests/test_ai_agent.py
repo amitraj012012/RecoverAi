@@ -116,6 +116,8 @@ def test_execute_recovery_workflow_c1024():
             case.status = "FAILED"
             case.attempt_count = 0
             case.recovered_amount = 0
+            db.query(RecoveryAction).filter(RecoveryAction.recovery_case_id == "rec_c1024_fail").delete()
+            db.query(AuditEvent).filter(AuditEvent.entity_id == "rec_c1024_fail").delete()
             db.commit()
 
         res = execute_recovery_workflow(db, recovery_case_id="rec_c1024_fail", merchant_id="merchant_default")
@@ -126,12 +128,12 @@ def test_execute_recovery_workflow_c1024():
         assert res["current_status"] in ["RECOVERED", "ACTION_EXECUTED", "ESCALATED"]
 
         # Check action was recorded in database
-        action = db.query(RecoveryAction).filter(RecoveryAction.recovery_case_id == "rec_c1024_fail").first()
+        action = db.query(RecoveryAction).filter(RecoveryAction.recovery_case_id == "rec_c1024_fail").order_by(RecoveryAction.executed_at.desc()).first()
         assert action is not None
         assert action.action_type in ALLOWED_STRATEGIES
 
         # Check audit event was recorded in database
-        audit = db.query(AuditEvent).filter(AuditEvent.entity_id == "rec_c1024_fail").first()
+        audit = db.query(AuditEvent).filter(AuditEvent.entity_id == "rec_c1024_fail").order_by(AuditEvent.created_at.desc()).first()
         assert audit is not None
         assert "RECOVERY_" in audit.event_type
     finally:
