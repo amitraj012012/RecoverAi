@@ -225,7 +225,9 @@ export const AiDecisionsPage: React.FC = () => {
 
                   <div className="flex items-center space-x-2 text-xs">
                     <span className="text-[#64748B]">ML Probability:</span>
-                    <span className="font-bold text-[#2563EB]">{d.ml_probability_percentage}%</span>
+                    <span className="font-bold text-[#2563EB]">
+                      {d.ml_probability_percentage === '—' ? '—' : `${d.ml_probability_percentage}%`}
+                    </span>
                     <span className="text-slate-300">|</span>
                     <span className="text-[#64748B]">Tool:</span>
                     <span className="font-mono text-slate-700">{d.tool_invoked}</span>
