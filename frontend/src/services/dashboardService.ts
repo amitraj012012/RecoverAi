@@ -99,17 +99,31 @@ export async function fetchPayments(
 
     const res = await fetch(url, { headers: getAuthHeaders() });
     if (res.ok) {
-      return await res.json();
+      const data = await res.json();
+      return {
+        items: data.items.map((p: any) => ({
+          id: p.id,
+          customerId: p.customer_id,
+          amount: Math.round(p.amount / 100),
+          currency: p.currency,
+          paymentMethod: p.payment_method,
+          status: p.status,
+          failureReason: p.failure_reason,
+          createdAt: p.created_at,
+        })),
+        total: data.total,
+      };
     }
   } catch (err) {
-    console.warn('Backend /payments unavailable:', err);
+    console.warn('Backend /payments unavailable, using fallback:', err);
   }
+
   return { items: [], total: 0 };
 }
 
 export async function fetchCustomers(
   page = 1,
-  limit = 20,
+  limit = 50,
   search?: string
 ): Promise<{ items: any[]; total: number }> {
   try {
@@ -118,55 +132,76 @@ export async function fetchCustomers(
 
     const res = await fetch(url, { headers: getAuthHeaders() });
     if (res.ok) {
-      return await res.json();
+      const data = await res.json();
+      return {
+        items: data.items.map((c: any) => ({
+          id: c.id,
+          merchantId: c.merchant_id,
+          demoName: c.demo_name,
+          subscriptionValue: Math.round(c.subscription_value / 100),
+          tenure: c.tenure,
+          activityScore: c.activity_score,
+          createdAt: c.created_at,
+        })),
+        total: data.total,
+      };
     }
   } catch (err) {
     console.warn('Backend /customers unavailable:', err);
   }
+
   return { items: [], total: 0 };
 }
 
 export async function fetchRecoveryCases(
   page = 1,
   limit = 20,
-  status?: string
+  status?: string,
+  strategy?: string
 ): Promise<{ items: RecoveryCaseSummary[]; total: number }> {
   try {
     let url = `${API_BASE}/recovery-cases?page=${page}&limit=${limit}`;
     if (status) url += `&status=${encodeURIComponent(status)}`;
+    if (strategy) url += `&selected_strategy=${encodeURIComponent(strategy)}`;
 
     const res = await fetch(url, { headers: getAuthHeaders() });
     if (res.ok) {
       const data = await res.json();
-      const items = data.items.map((rc: any) => ({
-        id: rc.id,
-        paymentId: rc.payment_id,
-        customerId: rc.payment_id ? rc.payment_id.split('_')[1]?.toUpperCase() || 'C1024' : 'C1024',
-        customerName: `Customer ${rc.id}`,
-        amount: Math.round((rc.expected_revenue || 199900) / 100),
-        currency: 'INR',
-        failureReason: 'Card Declined (Insufficient Funds)',
-        paymentMethod: 'Credit Card',
-        recoveryProbability: rc.recovery_probability ?? 0.878,
-        selectedStrategy: (rc.selected_strategy as any) || 'CREATE_PAYMENT_LINK',
-        status: (rc.status as any) || 'FAILED',
-        recoveredAmount: rc.recovered_amount ? Math.round(rc.recovered_amount / 100) : 0,
-        createdAt: new Date(rc.created_at).toLocaleTimeString(),
-      }));
-      return { items, total: data.total };
+      return {
+        items: data.items.map((item: any) => ({
+          id: item.id,
+          customerId: item.customer?.id || item.payment?.customer_id || 'Unknown',
+          customerName: item.customer?.demo_name || 'Enterprise Customer',
+          amount: Math.round(item.expected_revenue / 100),
+          currency: item.payment?.currency || 'INR',
+          failureReason: item.payment?.failure_reason || 'Payment Failure',
+          paymentMethod: item.payment?.payment_method || 'card',
+          recoveryProbability: item.recovery_probability ? Math.round(item.recovery_probability * 100) : 70,
+          selectedStrategy: item.selected_strategy || 'RETRY_PAYMENT',
+          status: item.status,
+          recoveredAmount: item.recovered_amount ? Math.round(item.recovered_amount / 100) : 0,
+          createdAt: item.created_at,
+        })),
+        total: data.total,
+      };
     }
   } catch (err) {
     console.warn('Backend /recovery-cases unavailable:', err);
   }
+
   return { items: [], total: 0 };
 }
 
-export async function fetchRecoveryCasesPreview(page = 1, limit = 10): Promise<RecoveryCaseSummary[]> {
-  const res = await fetchRecoveryCases(page, limit);
-  return res.items;
+export async function fetchRecoveryCasesPreview(): Promise<RecoveryCaseSummary[]> {
+  const { items } = await fetchRecoveryCases(1, 5);
+  return items;
 }
 
 export async function predictRecoveryProbability(paymentId: string): Promise<any> {
+  return predictRecovery(paymentId);
+}
+
+export async function predictRecovery(paymentId: string): Promise<any> {
   try {
     const res = await fetch(`${API_BASE}/ai/predict-recovery`, {
       method: 'POST',
@@ -187,6 +222,7 @@ export async function executeRecoveryWorkflow(caseId: string): Promise<any> {
     const res = await fetch(`${API_BASE}/ai/recover/${caseId}`, {
       method: 'POST',
       headers: getAuthHeaders(),
+      body: JSON.stringify({}),
     });
     if (res.ok) {
       return await res.json();
@@ -370,6 +406,27 @@ export async function fetchPaymentMethods(): Promise<any[]> {
   return [];
 }
 
+function formatTrendDateLabel(dateStr: string): string {
+  if (!dateStr) return '';
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const parts = dateStr.split('-');
+  if (parts.length === 3) {
+    const monthIdx = parseInt(parts[1], 10) - 1;
+    const day = parseInt(parts[2], 10);
+    if (monthIdx >= 0 && monthIdx < 12 && !isNaN(day)) {
+      return `${monthNames[monthIdx]} ${day}`;
+    }
+  }
+  if (parts.length === 2) {
+    const monthIdx = parseInt(parts[0], 10) - 1;
+    const day = parseInt(parts[1], 10);
+    if (monthIdx >= 0 && monthIdx < 12 && !isNaN(day)) {
+      return `${monthNames[monthIdx]} ${day}`;
+    }
+  }
+  return dateStr;
+}
+
 export async function fetchRevenueTrends(): Promise<RevenueTrendPoint[]> {
   try {
     const res = await fetch(`${API_BASE}/analytics/trends?period=daily&limit=14`, { headers: getAuthHeaders() });
@@ -377,7 +434,7 @@ export async function fetchRevenueTrends(): Promise<RevenueTrendPoint[]> {
       const data = await res.json();
       if (data && data.length > 0) {
         return data.map((t: any) => ({
-          date: t.date.slice(5),
+          date: formatTrendDateLabel(t.date),
           recovered: Math.round(t.success_volume_paise / 100),
           atRisk: Math.round(t.at_risk_paise / 100),
         }));
@@ -388,13 +445,13 @@ export async function fetchRevenueTrends(): Promise<RevenueTrendPoint[]> {
   }
 
   return [
-    { date: '01-01', atRisk: 1200000, recovered: 680000 },
-    { date: '01-02', atRisk: 1450000, recovered: 820000 },
-    { date: '01-03', atRisk: 1100000, recovered: 610000 },
-    { date: '01-04', atRisk: 1600000, recovered: 940000 },
-    { date: '01-05', atRisk: 1350000, recovered: 780000 },
-    { date: '01-06', atRisk: 900000, recovered: 510000 },
-    { date: '01-07', atRisk: 750000, recovered: 420000 },
+    { date: 'Jan 1', atRisk: 1200000, recovered: 680000 },
+    { date: 'Jan 2', atRisk: 1450000, recovered: 820000 },
+    { date: 'Jan 3', atRisk: 1100000, recovered: 610000 },
+    { date: 'Jan 4', atRisk: 1600000, recovered: 940000 },
+    { date: 'Jan 5', atRisk: 1350000, recovered: 780000 },
+    { date: 'Jan 6', atRisk: 900000, recovered: 510000 },
+    { date: 'Jan 7', atRisk: 750000, recovered: 420000 },
   ];
 }
 

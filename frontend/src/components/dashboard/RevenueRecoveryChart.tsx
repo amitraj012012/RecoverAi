@@ -23,7 +23,7 @@ export const RevenueRecoveryChart: React.FC<RevenueRecoveryChartProps> = ({ data
         <div>
           <h3 className="text-sm font-bold text-[#0F172A]">Revenue Recovery Trajectory</h3>
           <p className="text-xs text-[#64748B]">
-            Daily comparison of revenue at risk vs verified recovered revenue
+            Daily timeline of revenue at risk vs verified recovered revenue
           </p>
         </div>
 
@@ -68,7 +68,11 @@ export const RevenueRecoveryChart: React.FC<RevenueRecoveryChartProps> = ({ data
               tickFormatter={formatCurrency}
             />
             <Tooltip
-              formatter={(value: any) => [`₹${(Number(value) / 100000).toFixed(2)}L`, '']}
+              formatter={(value: any, name: any) => [
+                `₹${(Number(value) / 100000).toFixed(2)}L`,
+                name === 'atRisk' ? 'Revenue at Risk' : name === 'recovered' ? 'Recovered Revenue' : name,
+              ]}
+              labelFormatter={(label: string) => `Date: ${label}`}
               contentStyle={{
                 backgroundColor: '#FFFFFF',
                 borderColor: '#E2E8F0',
@@ -89,7 +93,7 @@ export const RevenueRecoveryChart: React.FC<RevenueRecoveryChartProps> = ({ data
             <Area
               type="monotone"
               dataKey="recovered"
-              name="Revenue Recovered"
+              name="Recovered Revenue"
               stroke="#10B981"
               strokeWidth={2}
               fillOpacity={1}
