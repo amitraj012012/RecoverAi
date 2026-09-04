@@ -48,14 +48,31 @@ async def get_ai_decisions_endpoint(
 ):
     """
     Returns audit trail logs of AI decisions and tool executions for the merchant.
+    Excludes memory-learning log events (AGENT_MEMORY_LEARNED).
     """
     events = (
         db.query(AuditEvent)
-        .filter(AuditEvent.merchant_id == merchant.merchant_id)
+        .filter(
+            AuditEvent.merchant_id == merchant.merchant_id,
+            AuditEvent.event_type.like("RECOVERY_%"),
+        )
         .order_by(AuditEvent.created_at.desc())
         .limit(limit)
         .all()
     )
+
+    # Fallback to any merchant audit event excluding memory-learning records
+    if not events:
+        events = (
+            db.query(AuditEvent)
+            .filter(
+                AuditEvent.merchant_id == merchant.merchant_id,
+                AuditEvent.event_type != "AGENT_MEMORY_LEARNED",
+            )
+            .order_by(AuditEvent.created_at.desc())
+            .limit(limit)
+            .all()
+        )
 
     items = []
     for ev in events:

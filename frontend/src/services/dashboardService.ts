@@ -240,97 +240,108 @@ export async function fetchAiDecisions(limit = 50): Promise<any[]> {
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data)) {
-        return data.map((ev: any) => {
-          const meta = ev.metadata || {};
-          const rawProb = meta.ml_probability;
-          let probFormatted = '—';
-          if (rawProb !== undefined && rawProb !== null) {
-            const num = Number(rawProb);
-            if (!isNaN(num)) {
-              probFormatted = num <= 1.0 ? (num * 100).toFixed(1) : num.toFixed(1);
+        return data
+          .filter((ev: any) => {
+            // Strictly exclude memory-learning events and non-decision audit records
+            if (ev.event_type === 'AGENT_MEMORY_LEARNED' || ev.actor === 'adaptive_memory_engine_v1') {
+              return false;
             }
-          } else if (meta.confidence !== undefined && meta.confidence !== null) {
-            const num = Number(meta.confidence);
-            if (!isNaN(num)) {
-              probFormatted = num <= 1.0 ? (num * 100).toFixed(1) : num.toFixed(1);
+            if (ev.id?.startsWith('aud_mem_') || ev.recovery_case_id?.startsWith('mem_')) {
+              return false;
             }
-          }
+            return (
+              ev.event_type?.startsWith('RECOVERY_') ||
+              ev.actor === 'ai_recovery_agent_v1' ||
+              ev.recovery_case_id?.startsWith('rec_') ||
+              ev.metadata?.recovery_case_id?.startsWith('rec_')
+            );
+          })
+          .map((ev: any) => {
+            const meta = ev.metadata || {};
+            const rawProb = meta.ml_probability;
+            let probFormatted = '—';
+            if (rawProb !== undefined && rawProb !== null) {
+              const num = Number(rawProb);
+              if (!isNaN(num)) {
+                probFormatted = num <= 1.0 ? (num * 100).toFixed(1) : num.toFixed(1);
+              }
+            } else if (meta.confidence !== undefined && meta.confidence !== null) {
+              const num = Number(meta.confidence);
+              if (!isNaN(num)) {
+                probFormatted = num <= 1.0 ? (num * 100).toFixed(1) : num.toFixed(1);
+              }
+            }
 
-          const strategy =
-            meta.selected_strategy ||
-            meta.strategy ||
-            ev.event_type?.replace('RECOVERY_', '') ||
-            'RECOVERY_ACTION';
+            const strategy =
+              meta.selected_strategy ||
+              ev.event_type?.replace('RECOVERY_', '') ||
+              'RECOVERY_ACTION';
 
-          const customerId =
-            meta.customer_id ||
-            (ev.recovery_case_id?.startsWith('rec_c')
-              ? ev.recovery_case_id.split('_')[1]?.toUpperCase()
-              : meta.memory_id?.startsWith('mem_c')
-              ? meta.memory_id.split('_')[1]?.toUpperCase()
-              : '—');
+            const customerId =
+              meta.customer_id ||
+              (ev.recovery_case_id?.startsWith('rec_c')
+                ? ev.recovery_case_id.split('_')[1]?.toUpperCase()
+                : '—');
 
-          const actionId =
-            ev.id?.startsWith('aud_act_')
-              ? ev.id.replace('aud_', '')
-              : ev.id?.startsWith('aud_mem_')
-              ? ev.id.replace('aud_mem_', '')
-              : ev.id;
+            // Actual RecoveryAction ID (e.g. act_c1418_7_3_dabeecff from aud_act_c1418_7_3_dabeecff)
+            const actionId =
+              ev.id?.startsWith('aud_act_')
+                ? ev.id.replace('aud_', '')
+                : meta.recovery_action_id || ev.id;
 
-          const toolInvoked =
-            meta.tool_invoked ||
-            (strategy === 'RETRY_PAYMENT'
-              ? 'payment_retry_simulator'
-              : strategy === 'CREATE_PAYMENT_LINK'
-              ? 'payment_link_simulator'
-              : strategy === 'ALTERNATE_PAYMENT_METHOD'
-              ? 'payment_method_update_simulator'
-              : strategy === 'SEND_REMINDER'
-              ? 'customer_notification_simulator'
-              : strategy === 'OFFER_INCENTIVE'
-              ? 'incentive_offer_simulator'
-              : strategy === 'ESCALATE_TO_HUMAN'
-              ? 'human_escalation_tool'
-              : 'autonomous_engine');
+            const toolInvoked =
+              meta.tool_invoked ||
+              (strategy === 'RETRY_PAYMENT'
+                ? 'payment_retry_simulator'
+                : strategy === 'CREATE_PAYMENT_LINK'
+                ? 'payment_link_simulator'
+                : strategy === 'ALTERNATE_PAYMENT_METHOD'
+                ? 'payment_method_update_simulator'
+                : strategy === 'SEND_REMINDER'
+                ? 'customer_notification_simulator'
+                : strategy === 'OFFER_INCENTIVE'
+                ? 'incentive_offer_simulator'
+                : strategy === 'ESCALATE_TO_HUMAN'
+                ? 'human_escalation_tool'
+                : 'autonomous_engine');
 
-          const decisionReason =
-            meta.agent_reason ||
-            meta.decision_reason ||
-            meta.reason ||
-            (meta.action === 'seeded_synthetic_dataset'
-              ? 'Initialized synthetic dataset with benchmark payments and recovery cases.'
-              : meta.model === 'logistic-regression-v2'
-              ? 'Activated logistic regression recovery prediction risk engine.'
-              : meta.clusters_indexed
-              ? 'Synchronized behavioral context clusters for adaptive learning.'
-              : `Adaptive memory reinforced strategy ${strategy} based on cluster win rates.`);
+            const decisionReason =
+              meta.agent_reason ||
+              meta.decision_reason ||
+              meta.reason ||
+              `AI Agent selected ${strategy.replace(/_/g, ' ')} based on ML score and failure taxonomy.`;
 
-          const toolResult =
-            meta.tool_result ||
-            (meta.is_recovered === true
-              ? 'SUCCESS'
-              : meta.is_recovered === false
-              ? 'FAILED'
-              : meta.status?.toUpperCase() || 'COMPLETED');
+            const toolResult =
+              meta.tool_result ||
+              (meta.is_recovered === true
+                ? 'SUCCESS'
+                : meta.is_recovered === false
+                ? 'FAILED'
+                : 'EXECUTED');
 
-          const currentStatus =
-            meta.current_status ||
-            (toolResult === 'SUCCESS' ? 'RECOVERED' : toolResult);
+            const currentStatus =
+              meta.state_transition?.includes('-> RECOVERED') || toolResult === 'SUCCESS'
+                ? 'RECOVERED'
+                : meta.state_transition?.includes('-> ESCALATED')
+                ? 'ESCALATED'
+                : toolResult === 'FAILED'
+                ? 'FAILED'
+                : 'ACTION_EXECUTED';
 
-          return {
-            id: ev.id,
-            recovery_case_id: ev.recovery_case_id || meta.recovery_case_id || 'System Event',
-            customer_id: customerId,
-            ml_probability_percentage: probFormatted,
-            selected_strategy: strategy,
-            tool_invoked: toolInvoked,
-            decision_reason: decisionReason,
-            current_status: currentStatus,
-            tool_result: toolResult,
-            recovery_action_id: actionId,
-            created_at: ev.created_at,
-          };
-        });
+            return {
+              id: ev.id,
+              recovery_case_id: ev.recovery_case_id || meta.recovery_case_id || 'rec_case',
+              customer_id: customerId,
+              ml_probability_percentage: probFormatted,
+              selected_strategy: strategy,
+              tool_invoked: toolInvoked,
+              decision_reason: decisionReason,
+              current_status: currentStatus,
+              tool_result: toolResult,
+              recovery_action_id: actionId,
+              created_at: ev.created_at,
+            };
+          });
       }
     }
   } catch (err) {
