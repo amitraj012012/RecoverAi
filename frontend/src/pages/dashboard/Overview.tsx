@@ -175,10 +175,10 @@ export const Overview: React.FC = () => {
                 </div>
                 <div className="mt-1 flex items-baseline justify-between">
                   <span className="text-base font-bold text-[#F59E0B]">
-                    ₹{(fr.revenue_at_risk_paise / 100000).toFixed(1)}L
+                    ₹{(fr.revenue_at_risk_paise / 10000000).toFixed(3)}L
                   </span>
                   <span className="text-xs text-[#64748B] font-medium">
-                    {fr.count.toLocaleString()} cases ({fr.percentage_of_risk}%)
+                    {fr.count.toLocaleString()} cases · {fr.percentage_of_risk}% exposure
                   </span>
                 </div>
               </div>

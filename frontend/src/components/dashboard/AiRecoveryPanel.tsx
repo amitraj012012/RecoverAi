@@ -38,7 +38,7 @@ export const AiRecoveryPanel: React.FC<AiRecoveryPanelProps> = ({
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 my-4">
         <div className="bg-slate-900/80 rounded-lg p-3 border border-slate-800">
-          <div className="text-[11px] text-slate-400">Analyzed Cases</div>
+          <div className="text-[11px] text-slate-400">Transactions Analyzed</div>
           <div className="text-lg font-bold text-white mt-1 flex items-center">
             <Cpu className="w-3.5 h-3.5 mr-1.5 text-blue-400" />
             {casesAnalyzed.toLocaleString()}
@@ -46,7 +46,7 @@ export const AiRecoveryPanel: React.FC<AiRecoveryPanelProps> = ({
         </div>
 
         <div className="bg-slate-900/80 rounded-lg p-3 border border-slate-800">
-          <div className="text-[11px] text-slate-400">Actions Executed</div>
+          <div className="text-[11px] text-slate-400">Settled Transactions</div>
           <div className="text-lg font-bold text-white mt-1 flex items-center">
             <CheckCircle2 className="w-3.5 h-3.5 mr-1.5 text-emerald-400" />
             {actionsExecuted.toLocaleString()}
@@ -54,14 +54,14 @@ export const AiRecoveryPanel: React.FC<AiRecoveryPanelProps> = ({
         </div>
 
         <div className="bg-slate-900/80 rounded-lg p-3 border border-slate-800">
-          <div className="text-[11px] text-slate-400">Recovered Today</div>
+          <div className="text-[11px] text-slate-400">Recovered Revenue</div>
           <div className="text-lg font-bold text-emerald-400 mt-1">
             {recoveredToday}
           </div>
         </div>
 
         <div className="bg-slate-900/80 rounded-lg p-3 border border-slate-800">
-          <div className="text-[11px] text-slate-400">Recovery Rate</div>
+          <div className="text-[11px] text-slate-400">Failure Rate</div>
           <div className="text-lg font-bold text-white mt-1">
             {activeRate}%
           </div>
