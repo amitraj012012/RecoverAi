@@ -67,11 +67,10 @@ def evaluate_recovery_strategy(
     """
     Bounded Adaptive Decision Engine:
     Selects from strictly 6 allowed recovery strategies based on:
-    1. Phase 5 ML Recovery Probability
-    2. Failure taxonomy & payment rails
-    3. Customer longevity & engagement scores
-    4. Guardrail limits (attempt_count < 3)
-    5. Adaptive historical memory signals from previous simulator outcomes
+    1. Guardrail limits (attempt_count >= 3 -> ESCALATE_TO_HUMAN)
+    2. ML Recovery Probability (ml_probability < 0.30 -> ESCALATE_TO_HUMAN)
+    3. Adaptive empirical memory signals from historical outcomes (win_rate >= 70%, attempts >= 3)
+    4. Deterministic failure taxonomy, payment rails & customer engagement heuristics
     """
     attempt_count = recovery_case.attempt_count
     failure_reason = payment.failure_reason or ""
@@ -86,8 +85,15 @@ def evaluate_recovery_strategy(
             0.95,
         )
 
-    # Query Adaptive Memory for historical empirical evidence if DB session available
-    memory_signal = None
+    # Guardrail 2: Extreme low recovery probability -> Forced Human Escalation
+    if ml_probability < 0.30:
+        return (
+            "ESCALATE_TO_HUMAN",
+            f"Low recovery probability ({ml_probability*100:.1f}%) with complex failure profile. Escalated to Human Ops.",
+            0.90,
+        )
+
+    # Adaptive Memory Layer: Check historical empirical win-rates if DB session available
     if db:
         mem_data = retrieve_relevant_experiences(
             db=db,
@@ -98,24 +104,47 @@ def evaluate_recovery_strategy(
             limit=5,
         )
         perf = mem_data.get("strategy_performance", {})
-        # Look for empirical win-rate dominance
-        for strat, stats in perf.items():
-            if stats["attempts"] >= 3 and stats["win_rate"] >= 0.70:
-                memory_signal = (strat, stats["win_rate_percentage"])
-                break
+        cluster = mem_data.get("context_cluster", "GENERAL")
 
-    # Strategy Selection by Failure Type & ML Probability
+        # Find best-performing allowlisted strategy with proven statistical significance
+        dominant_strategy = None
+        best_stats = None
+        for strat, stats in perf.items():
+            if (
+                strat in ALLOWED_STRATEGIES
+                and stats.get("attempts", 0) >= 3
+                and stats.get("win_rate", 0.0) >= 0.70
+            ):
+                # Prioritize higher win rate, breaking ties with higher attempt count
+                if (
+                    best_stats is None
+                    or stats["win_rate"] > best_stats["win_rate"]
+                    or (
+                        stats["win_rate"] == best_stats["win_rate"]
+                        and stats["attempts"] > best_stats["attempts"]
+                    )
+                ):
+                    dominant_strategy = strat
+                    best_stats = stats
+
+        if dominant_strategy and best_stats:
+            win_pct = best_stats["win_rate_percentage"]
+            attempts = best_stats["attempts"]
+            confidence = max(0.70, min(0.95, round(best_stats["win_rate"], 2)))
+            reason_text = (
+                f"Adaptive Memory: Selected {dominant_strategy.replace('_', ' ')} based on "
+                f"{win_pct}% empirical win-rate across {attempts} recorded recoveries in cluster '{cluster}'."
+            )
+            return (dominant_strategy, reason_text, confidence)
+
+    # Deterministic Heuristic Fallback (Cold-Start / Baseline Taxonomy)
     if "Expired" in failure_reason:
         reason_text = f"Card expired on established customer ({tenure}mo tenure). Dispatched automated self-serve payment link."
-        if memory_signal and memory_signal[0] == "CREATE_PAYMENT_LINK":
-            reason_text += f" (Adaptive memory confirmed {memory_signal[1]}% empirical conversion on expired cards)."
         return ("CREATE_PAYMENT_LINK", reason_text, 0.92)
 
     elif "UPI" in failure_reason or "Bank" in failure_reason or "Timeout" in failure_reason:
         if attempt_count == 0 and ml_probability >= 0.65:
             reason_text = f"Transient infrastructure timeout ({failure_reason}) with high ML probability ({ml_probability*100:.1f}%). Scheduled smart gateway retry."
-            if memory_signal and memory_signal[0] == "RETRY_PAYMENT":
-                reason_text += f" (Adaptive memory: {memory_signal[1]}% retry success for transient timeouts)."
             return ("RETRY_PAYMENT", reason_text, 0.89)
         else:
             return (
@@ -127,8 +156,6 @@ def evaluate_recovery_strategy(
     elif "Insufficient" in failure_reason:
         if ml_probability >= 0.75 and activity_score >= 0.70:
             reason_text = f"High-engagement loyal customer ({activity_score*100:.0f}% activity, {tenure}mo tenure) with temporary decline. Dispatched priority payment link."
-            if memory_signal:
-                reason_text += f" (Adaptive memory: reinforced by {memory_signal[0]} win-rate {memory_signal[1]}%)."
             return ("CREATE_PAYMENT_LINK", reason_text, 0.88)
         elif activity_score < 0.35 and attempt_count >= 1:
             return (
@@ -148,13 +175,6 @@ def evaluate_recovery_strategy(
             "ALTERNATE_PAYMENT_METHOD",
             "Transaction exceeded card limit ceiling. Requested alternate enterprise billing method.",
             0.76,
-        )
-
-    elif ml_probability < 0.30:
-        return (
-            "ESCALATE_TO_HUMAN",
-            f"Low recovery probability ({ml_probability*100:.1f}%) with complex failure profile. Escalated to Human Ops.",
-            0.90,
         )
 
     else:

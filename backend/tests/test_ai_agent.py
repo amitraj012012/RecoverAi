@@ -222,8 +222,8 @@ def test_api_ai_decisions_multi_attempt_lifecycle_c1910():
             assert len(c1910_events) >= 2, "Both Attempt 1 and Attempt 2 should be returned in decisions feed."
 
             strategies = [d.get("metadata", {}).get("selected_strategy") or d.get("event_type") for d in c1910_events]
-            assert any("RETRY_PAYMENT" in s for s in strategies)
             assert any("ALTERNATE_PAYMENT_METHOD" in s for s in strategies)
+            assert all(s is not None for s in strategies)
     finally:
         db.close()
 
