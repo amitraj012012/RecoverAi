@@ -240,3 +240,107 @@ def test_merchant_isolation_simulator():
         res = client.post("/simulator/case/rec_c1024_fail", json={"scenario": "auto"}, headers=headers_b)
         assert res.status_code == 400
         assert "not found or unauthorized" in res.json()["detail"].lower()
+
+
+def test_calculate_effective_recovery_probability_all_strategies():
+    from app.services.tool_registry import calculate_effective_recovery_probability, STRATEGY_EFFICACY
+
+    # 1. Verify exact calibration coefficients at attempt 0
+    assert STRATEGY_EFFICACY["RETRY_PAYMENT"] == 0.70
+    assert STRATEGY_EFFICACY["CREATE_PAYMENT_LINK"] == 0.55
+    assert STRATEGY_EFFICACY["ALTERNATE_PAYMENT_METHOD"] == 0.45
+    assert STRATEGY_EFFICACY["OFFER_INCENTIVE"] == 0.40
+    assert STRATEGY_EFFICACY["SEND_REMINDER"] == 0.35
+
+    # 2. Verify Peff calculation with ML prob = 0.80
+    assert round(calculate_effective_recovery_probability(0.80, "RETRY_PAYMENT", 0), 4) == 0.56
+    assert round(calculate_effective_recovery_probability(0.80, "CREATE_PAYMENT_LINK", 0), 4) == 0.44
+    assert round(calculate_effective_recovery_probability(0.80, "ALTERNATE_PAYMENT_METHOD", 0), 4) == 0.36
+    assert round(calculate_effective_recovery_probability(0.80, "OFFER_INCENTIVE", 0), 4) == 0.32
+    assert round(calculate_effective_recovery_probability(0.80, "SEND_REMINDER", 0), 4) == 0.28
+
+
+def test_attempt_decay_and_clamping():
+    from app.services.tool_registry import calculate_effective_recovery_probability
+
+    ml_p = 0.90
+    strat = "RETRY_PAYMENT"  # efficacy = 0.70 -> base Peff = 0.63
+
+    # Attempt 0: factor = 1.00
+    p0 = calculate_effective_recovery_probability(ml_p, strat, 0)
+    assert round(p0, 4) == 0.63
+
+    # Attempt 1: factor = 0.85
+    p1 = calculate_effective_recovery_probability(ml_p, strat, 1)
+    assert round(p1, 4) == round(0.63 * 0.85, 4)  # 0.5355
+
+    # Attempt 2: factor = 0.7225
+    p2 = calculate_effective_recovery_probability(ml_p, strat, 2)
+    assert round(p2, 4) == round(0.63 * 0.7225, 4)  # 0.4552
+
+    # Clamping: negative ML probability clamps to 0.0
+    assert calculate_effective_recovery_probability(-0.5, strat, 0) == 0.0
+
+    # Clamping: excessive ML probability clamps to <= 1.0
+    assert calculate_effective_recovery_probability(2.5, strat, 0) <= 1.0
+
+    # ESCALATE_TO_HUMAN and unknown strategy return 0.0
+    assert calculate_effective_recovery_probability(0.95, "ESCALATE_TO_HUMAN", 0) == 0.0
+    assert calculate_effective_recovery_probability(0.95, "UNKNOWN_STRATEGY", 0) == 0.0
+
+
+def test_tool_specific_non_success_semantics():
+    from app.services.tool_registry import (
+        execute_payment_retry_simulator,
+        execute_payment_link_simulator,
+        execute_payment_method_update_simulator,
+        execute_customer_notification_simulator,
+        execute_incentive_offer_simulator,
+        execute_human_escalation_tool,
+    )
+
+    # When ML probability = 0.0, verify strategy-specific non-success statuses
+    res_retry, _, is_rec_retry = execute_payment_retry_simulator("rc1", "p1", 1000, 0.0)
+    assert res_retry == "FAILED"
+    assert is_rec_retry is False
+
+    res_link, _, is_rec_link = execute_payment_link_simulator("rc2", "p2", "c2", 1000, 0.0)
+    assert res_link == "PENDING_CUSTOMER_ACTION"
+    assert is_rec_link is False
+
+    res_alt, _, is_rec_alt = execute_payment_method_update_simulator("rc3", "c3", 1000, 0.0)
+    assert res_alt == "PENDING_CUSTOMER_ACTION"
+    assert is_rec_alt is False
+
+    res_rem, _, is_rec_rem = execute_customer_notification_simulator("rc4", "c4", 1000, 0.0)
+    assert res_rem == "NOTIFICATION_DISPATCHED"
+    assert is_rec_rem is False
+
+    res_inc, _, is_rec_inc = execute_incentive_offer_simulator("rc5", "c5", 1000, 0.0)
+    assert res_inc == "PENDING_CUSTOMER_ACTION"
+    assert is_rec_inc is False
+
+    res_esc, _, is_rec_esc = execute_human_escalation_tool("rc6", "Manual escalation")
+    assert res_esc == "ESCALATED"
+    assert is_rec_esc is False
+
+
+def test_customer_notification_dispatch_never_marks_recovered():
+    from app.services.tool_registry import execute_customer_notification_simulator, dispatch_tool
+
+    # Even with ML probability = 1.0, reminder dispatch is purely informational and leaves case pending
+    res, meta, is_rec = execute_customer_notification_simulator("rc_rem", "cust_1", 50000, ml_probability=1.0)
+    assert res == "NOTIFICATION_DISPATCHED"
+    assert is_rec is False
+    assert meta["effective_probability"] == 0.0
+
+    res_disp, meta_disp, is_rec_disp = dispatch_tool(
+        tool_name="customer_notification_simulator",
+        case_id="rc_rem",
+        payment_id="pay_rem",
+        customer_id="cust_1",
+        amount_paise=50000,
+        ml_probability=1.0,
+    )
+    assert res_disp == "NOTIFICATION_DISPATCHED"
+    assert is_rec_disp is False

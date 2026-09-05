@@ -266,6 +266,7 @@ def execute_recovery_workflow(
         amount_paise=payment.amount,
         ml_probability=ml_prob,
         reason=reason,
+        attempt_count=rec_case.attempt_count,
     )
 
     # Step 7: Increment attempt count and transition to ACTION_EXECUTED

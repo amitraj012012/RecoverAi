@@ -124,7 +124,7 @@ def simulate_case_recovery(
             "demo": True,
         }, False
     else:
-        # Standard stochastic simulator dispatch based on ML probability
+        # Standard stochastic simulator dispatch based on bounded effective probability
         tool_result_status, tool_metadata, is_recovered = dispatch_tool(
             tool_name=tool_name,
             case_id=rec_case.id,
@@ -133,6 +133,7 @@ def simulate_case_recovery(
             amount_paise=payment.amount,
             ml_probability=ml_prob,
             reason=reason,
+            attempt_count=rec_case.attempt_count,
         )
 
     # Step 6: Increment attempt count and transition to ACTION_EXECUTED

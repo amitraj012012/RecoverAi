@@ -94,17 +94,28 @@ def test_max_attempts_guardrail_escalation():
     assert "Maximum automatic retry threshold reached" in reason3
 
 
-def test_simulator_success_and_failure_fidelity():
-    # Probability = 1.0 must yield success
-    res_succ, meta_succ, is_succ = dispatch_tool("payment_retry_simulator", "rc1", "p1", "c1", 1000, 1.0)
+def test_simulator_success_and_failure_fidelity(monkeypatch):
+    # Mock random to return 0.10 (less than 0.70 Peff -> success)
+    monkeypatch.setattr("random.random", lambda: 0.10)
+    res_succ, meta_succ, is_succ = dispatch_tool("payment_retry_simulator", "rc1", "p1", "c1", 1000, 1.0, attempt_count=0)
     assert res_succ == "SUCCESS"
     assert is_succ is True
     assert meta_succ["demo"] is True
+    assert meta_succ["effective_probability"] == 0.70
 
-    # Probability = 0.0 must yield failure
-    res_fail, meta_fail, is_fail = dispatch_tool("payment_retry_simulator", "rc2", "p2", "c2", 1000, 0.0)
+    # Mock random to return 0.90 (greater than 0.70 Peff -> failure)
+    monkeypatch.setattr("random.random", lambda: 0.90)
+    res_fail, meta_fail, is_fail = dispatch_tool("payment_retry_simulator", "rc2", "p2", "c2", 1000, 1.0, attempt_count=0)
     assert res_fail == "FAILED"
     assert is_fail is False
+    assert meta_fail["effective_probability"] == 0.70
+
+    # Probability = 0.0 must yield failure regardless of random
+    monkeypatch.setattr("random.random", lambda: 0.0001)
+    res_zero, meta_zero, is_zero = dispatch_tool("payment_retry_simulator", "rc3", "p3", "c3", 1000, 0.0, attempt_count=0)
+    assert res_zero == "FAILED"
+    assert is_zero is False
+    assert meta_zero["effective_probability"] == 0.0
 
 
 def test_execute_recovery_workflow_c1024():
