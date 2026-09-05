@@ -8,7 +8,7 @@ class Customer(Base):
     __tablename__ = "customers"
 
     id = Column(String(64), primary_key=True, index=True)  # e.g. 'C1024'
-    merchant_id = Column(String(64), index=True, nullable=False)
+    merchant_id = Column(String(64), primary_key=True, index=True, nullable=False)
     demo_name = Column(String(255), nullable=False)
     subscription_value = Column(Integer, nullable=False, default=0)  # in paise
     tenure = Column(Integer, nullable=False, default=1)  # in months
@@ -16,4 +16,10 @@ class Customer(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     # Relationships
-    payments = relationship("Payment", back_populates="customer", cascade="all, delete-orphan")
+    payments = relationship(
+        "Payment",
+        primaryjoin="and_(Customer.id==Payment.customer_id, Customer.merchant_id==Payment.merchant_id)",
+        foreign_keys="[Payment.customer_id, Payment.merchant_id]",
+        back_populates="customer",
+        cascade="all, delete-orphan",
+    )

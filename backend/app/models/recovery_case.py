@@ -9,8 +9,8 @@ class RecoveryCase(Base):
     __tablename__ = "recovery_cases"
 
     id = Column(String(64), primary_key=True, index=True)  # e.g. 'rec_...'
-    merchant_id = Column(String(64), index=True, nullable=False)
-    payment_id = Column(String(64), ForeignKey("payments.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    merchant_id = Column(String(64), primary_key=True, index=True, nullable=False)
+    payment_id = Column(String(64), nullable=False, index=True)
     recovery_probability = Column(Float, nullable=True)  # ML prediction
     selected_strategy = Column(String(64), nullable=True)  # Populated in Phase 6
     status = Column(String(32), default="FAILED", nullable=False, index=True)
@@ -23,8 +23,20 @@ class RecoveryCase(Base):
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
 
     # Relationships
-    payment = relationship("Payment", back_populates="recovery_case")
-    actions = relationship("RecoveryAction", back_populates="recovery_case", cascade="all, delete-orphan", order_by="RecoveryAction.executed_at")
+    payment = relationship(
+        "Payment",
+        primaryjoin="and_(RecoveryCase.payment_id==Payment.id, RecoveryCase.merchant_id==Payment.merchant_id)",
+        foreign_keys=[payment_id, merchant_id],
+        back_populates="recovery_case",
+    )
+    actions = relationship(
+        "RecoveryAction",
+        primaryjoin="RecoveryCase.id==RecoveryAction.recovery_case_id",
+        foreign_keys="RecoveryAction.recovery_case_id",
+        back_populates="recovery_case",
+        cascade="all, delete-orphan",
+        order_by="RecoveryAction.executed_at",
+    )
 
     @property
     def customer_id(self) -> Optional[str]:

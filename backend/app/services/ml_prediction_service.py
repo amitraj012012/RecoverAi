@@ -225,14 +225,21 @@ def predict_recovery(
     if not payment:
         raise ValueError(f"Payment '{payment_id}' not found.")
 
-    customer = db.query(Customer).filter(Customer.id == payment.customer_id).first()
+    query_cust = db.query(Customer).filter(Customer.id == payment.customer_id)
+    if payment.merchant_id:
+        query_cust = query_cust.filter(Customer.merchant_id == payment.merchant_id)
+    customer = query_cust.first()
     if not customer:
         raise ValueError(f"Customer '{payment.customer_id}' not found for payment.")
 
     # Calculate prior history strictly up to this payment (no leakage)
     prior_payments = (
         db.query(Payment)
-        .filter(Payment.customer_id == customer.id, Payment.created_at < payment.created_at)
+        .filter(
+            Payment.customer_id == customer.id,
+            Payment.merchant_id == payment.merchant_id,
+            Payment.created_at < payment.created_at,
+        )
         .all()
     )
     prior_success = sum(1 for p in prior_payments if p.status == "success")
@@ -270,17 +277,71 @@ def predict_recovery(
 def populate_all_recovery_probabilities(db: Session, merchant_id: Optional[str] = None) -> int:
     """
     Batch updates recovery_probability for all recovery cases using the trained v2 ML model.
+    Optimized for high-throughput batch scoring without redundant database round-trips.
     """
-    query = db.query(RecoveryCase)
-    if merchant_id:
-        query = query.filter(RecoveryCase.merchant_id == merchant_id)
-    cases = query.all()
+    from collections import defaultdict
 
-    updated = 0
+    model = get_model()
+
+    # 1. Query recovery cases
+    query_cases = db.query(RecoveryCase)
+    if merchant_id:
+        query_cases = query_cases.filter(RecoveryCase.merchant_id == merchant_id)
+    cases = query_cases.all()
+    if not cases:
+        return 0
+
+    # 2. Query customers & payments in batch
+    query_cust = db.query(Customer)
+    query_pay = db.query(Payment)
+    if merchant_id:
+        query_cust = query_cust.filter(Customer.merchant_id == merchant_id)
+        query_pay = query_pay.filter(Payment.merchant_id == merchant_id)
+
+    customers_by_id = {c.id: c for c in query_cust.all()}
+    all_payments = query_pay.order_by(Payment.created_at.asc()).all()
+
+    # Build prior payments index: customer_id -> list of payments sorted by created_at
+    customer_payments = defaultdict(list)
+    payments_by_id = {}
+    for p in all_payments:
+        payments_by_id[p.id] = p
+        customer_payments[p.customer_id].append(p)
+
+    mappings = []
     for rc in cases:
-        try:
-            predict_recovery(db, recovery_case_id=rc.id, merchant_id=merchant_id)
-            updated += 1
-        except Exception:
+        payment = payments_by_id.get(rc.payment_id)
+        if not payment:
             continue
-    return updated
+        customer = customers_by_id.get(payment.customer_id)
+        if not customer:
+            continue
+
+        # Compute prior success/fail count up to payment.created_at
+        cust_history = customer_payments.get(customer.id, [])
+        prior_success = 0
+        prior_fail = 0
+        for p in cust_history:
+            if p.created_at < payment.created_at:
+                if p.status == "success":
+                    prior_success += 1
+                elif p.status == "failed":
+                    prior_fail += 1
+            else:
+                break
+
+        X = build_feature_vector(customer, payment, prior_success, prior_fail)
+        prob = float(model.predict_proba(X)[0, 1])
+        prob_clamped = round(max(0.01, min(0.99, prob)), 4)
+        rc.recovery_probability = prob_clamped
+        mappings.append({
+            "id": rc.id,
+            "merchant_id": rc.merchant_id,
+            "recovery_probability": prob_clamped,
+        })
+
+    if mappings:
+        db.bulk_update_mappings(RecoveryCase, mappings)
+        db.commit()
+
+    return len(mappings)

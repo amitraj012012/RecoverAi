@@ -7,7 +7,7 @@ class AuditEvent(Base):
     __tablename__ = "audit_events"
 
     id = Column(String(64), primary_key=True, index=True)
-    merchant_id = Column(String(64), index=True, nullable=False)
+    merchant_id = Column(String(64), primary_key=True, index=True, nullable=False)
     event_type = Column(String(64), nullable=False)
     entity_id = Column(String(64), nullable=False)
     actor = Column(String(64), default="system", nullable=False)

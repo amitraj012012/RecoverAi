@@ -7,7 +7,7 @@ class RecoveryMemory(Base):
     __tablename__ = "recovery_memories"
 
     id = Column(String(64), primary_key=True, index=True)  # e.g. 'mem_...'
-    merchant_id = Column(String(64), index=True, nullable=False)
+    merchant_id = Column(String(64), primary_key=True, index=True, nullable=False)
     recovery_case_id = Column(String(64), index=True, nullable=False)
     payment_id = Column(String(64), index=True, nullable=False)
     customer_id = Column(String(64), index=True, nullable=False)

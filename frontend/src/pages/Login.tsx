@@ -1,15 +1,42 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ShieldCheck, AlertCircle, ArrowRight, Lock, Mail } from 'lucide-react';
+import { ShieldCheck, AlertCircle, ArrowRight, Lock, Mail, Sparkles } from 'lucide-react';
+
+const DEMO_EMAIL = import.meta.env.VITE_DEMO_EMAIL || 'demo@recoverai.io';
+const DEMO_PASSWORD = import.meta.env.VITE_DEMO_PASSWORD || '';
 
 export const Login: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDemoSubmitting, setIsDemoSubmitting] = useState(false);
   const { signIn, isMockMode } = useAuth();
   const navigate = useNavigate();
+
+  const handleExploreDemo = async () => {
+    setError(null);
+    setIsDemoSubmitting(true);
+    try {
+      if (!DEMO_PASSWORD) {
+        setError('Demo access is not configured. Please set VITE_DEMO_PASSWORD in your environment.');
+        setIsDemoSubmitting(false);
+        return;
+      }
+      // Authenticate with dedicated demo account credentials via standard Supabase JWT
+      const res = await signIn(DEMO_EMAIL, DEMO_PASSWORD);
+      if (res.error) {
+        setError(`Demo sign-in failed: ${res.error}`);
+        setIsDemoSubmitting(false);
+      } else {
+        navigate('/app', { replace: true });
+      }
+    } catch (err: any) {
+      setError(err.message || 'An unexpected error occurred during demo sign in.');
+      setIsDemoSubmitting(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,6 +98,45 @@ export const Login: React.FC = () => {
             </div>
           )}
 
+          {/* Dedicated Instant 1-Click Demo Access for Judges/Reviewers */}
+          <div className="mb-6">
+            <button
+              type="button"
+              onClick={handleExploreDemo}
+              disabled={isDemoSubmitting || isSubmitting}
+              className="w-full relative group overflow-hidden rounded-xl p-[1px] focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:ring-offset-2 transition-all disabled:opacity-60 shadow-sm hover:shadow-md"
+            >
+              <span className="absolute inset-0 bg-gradient-to-r from-[#2563EB] via-[#4F46E5] to-[#0EA5E9] rounded-xl" />
+              <span className="relative flex items-center justify-center gap-2.5 px-4 py-3 bg-[#0B1220] hover:bg-[#111C30] rounded-[11px] text-white font-semibold text-sm transition-colors">
+                {isDemoSubmitting ? (
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4 text-[#38BDF8] animate-pulse" />
+                    <span>Explore Demo Workspace</span>
+                    <span className="ml-1.5 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#2563EB]/40 text-[#93C5FD] border border-[#3B82F6]/50">
+                      1-CLICK ACCESS
+                    </span>
+                  </>
+                )}
+              </span>
+            </button>
+            <p className="mt-2 text-center text-[11px] text-[#64748B]">
+              Instantly experience live AI decisioning, risk analytics & simulator with benchmark SaaS data.
+            </p>
+          </div>
+
+          <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-[#E2E8F0]" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-white px-3 text-[#94A3B8] font-medium tracking-wider">
+                Or sign in with credentials
+              </span>
+            </div>
+          </div>
+
           <form className="space-y-5" onSubmit={handleSubmit}>
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-[#0F172A]">
@@ -127,7 +193,7 @@ export const Login: React.FC = () => {
             <div>
               <button
                 type="submit"
-                disabled={isSubmitting}
+                disabled={isSubmitting || isDemoSubmitting}
                 className="w-full flex justify-center items-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-semibold text-white bg-[#2563EB] hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#2563EB] disabled:opacity-50 transition-colors"
               >
                 {isSubmitting ? (
