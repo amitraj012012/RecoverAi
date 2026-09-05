@@ -53,12 +53,12 @@ export const ActiveCasesTable: React.FC<ActiveCasesTableProps> = ({ cases }) => 
                 <td className="px-5 py-3.5 whitespace-nowrap">
                   <div className="flex items-center space-x-2">
                     <span className="font-semibold text-[#0F172A]">
-                      {Math.round(c.recoveryProbability * 100)}%
+                      {Math.round(c.recoveryProbability ?? 70)}%
                     </span>
                     <div className="w-12 bg-slate-100 rounded-full h-1.5 overflow-hidden">
                       <div
                         className="bg-[#2563EB] h-1.5 rounded-full"
-                        style={{ width: `${c.recoveryProbability * 100}%` }}
+                        style={{ width: `${Math.round(c.recoveryProbability ?? 70)}%` }}
                       />
                     </div>
                   </div>
