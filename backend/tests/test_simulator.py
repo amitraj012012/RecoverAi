@@ -104,6 +104,13 @@ def test_single_case_simulation_forced_escalate():
 def test_batch_simulation_runner():
     db = SessionLocal()
     try:
+        # Ensure batch test cases are in FAILED state for runner
+        db.query(RecoveryCase).filter(
+            RecoveryCase.merchant_id == "merchant_default",
+            RecoveryCase.id.like("rec_test_batch_%"),
+        ).update({"status": "FAILED", "recovered_amount": 0, "attempt_count": 0, "selected_strategy": None}, synchronize_session=False)
+        db.commit()
+
         for size in [10, 25]:
             res = run_batch_simulation(db, merchant_id="merchant_default", batch_size=size, scenario="auto")
             assert res["cases_processed"] > 0
@@ -154,15 +161,52 @@ def test_c1024_consecutive_preset_switching():
 
 def test_duplicate_simulation_prevention():
     db = SessionLocal()
+    test_merchant_id = "merchant_test_terminal_sim"
     try:
-        # Verify non-C1024 cases remain strictly protected against terminal state rerun
-        case = db.query(RecoveryCase).filter(RecoveryCase.id != "rec_c1024_fail").first()
-        if case:
-            case.status = "RECOVERED"
-            db.commit()
-            with pytest.raises(ValueError, match="already in terminal state"):
-                simulate_case_recovery(db, recovery_case_id=case.id, merchant_id="merchant_default")
+        # Create dedicated isolated test entities
+        cust = Customer(
+            id="C_TEST_TERM_SIM",
+            merchant_id=test_merchant_id,
+            demo_name="Terminal Sim Test Corp",
+            subscription_value=199900,
+            tenure=12,
+            activity_score=0.80,
+        )
+        pay = Payment(
+            id="pay_test_term_sim",
+            merchant_id=test_merchant_id,
+            customer_id="C_TEST_TERM_SIM",
+            amount=199900,
+            currency="INR",
+            payment_method="card",
+            status="failed",
+            failure_reason="Card Expired",
+        )
+        case = RecoveryCase(
+            id="rec_test_term_sim",
+            merchant_id=test_merchant_id,
+            payment_id="pay_test_term_sim",
+            status="RECOVERED",
+            attempt_count=1,
+            expected_revenue=199900,
+            recovered_amount=199900,
+        )
+        db.add_all([cust, pay, case])
+        db.commit()
+
+        # Verify terminal recovery cases cannot be simulated again
+        with pytest.raises(ValueError, match="already in terminal state"):
+            simulate_case_recovery(db, recovery_case_id="rec_test_term_sim", merchant_id=test_merchant_id)
     finally:
+        db.query(RecoveryAction).filter(
+            RecoveryAction.recovery_case_id.in_(
+                db.query(RecoveryCase.id).filter(RecoveryCase.merchant_id == test_merchant_id)
+            )
+        ).delete(synchronize_session=False)
+        db.query(RecoveryCase).filter(RecoveryCase.merchant_id == test_merchant_id).delete()
+        db.query(Payment).filter(Payment.merchant_id == test_merchant_id).delete()
+        db.query(Customer).filter(Customer.merchant_id == test_merchant_id).delete()
+        db.commit()
         db.close()
 
 
