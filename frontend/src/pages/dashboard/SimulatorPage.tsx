@@ -168,7 +168,7 @@ export const SimulatorPage: React.FC = () => {
               {metrics?.recovery_rate_percentage || 0}%
             </div>
             <div className="text-[11px] text-[#64748B] mt-1">
-              Based on executed simulator attempts
+              Based on total recovery portfolio
             </div>
           </div>
 
@@ -203,7 +203,7 @@ export const SimulatorPage: React.FC = () => {
 
           <p className="text-xs text-[#64748B]">
             Simulates the full autonomous agent loop across a cohort of unrecovered failed payments:
-            ML scoring $\rightarrow$ Strategy selection $\rightarrow$ Guardrail check $\rightarrow$ Simulator execution.
+            ML scoring → Strategy selection → Guardrail check → Simulator execution.
           </p>
 
           <div className="space-y-2">
