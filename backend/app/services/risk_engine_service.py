@@ -2,7 +2,7 @@ import math
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, and_
 from app.models.payment import Payment
 from app.models.customer import Customer
 from app.models.recovery_case import RecoveryCase
@@ -89,7 +89,13 @@ def calculate_merchant_risk_overview(
     # Calculate explainable estimated recoverable revenue across all failed transactions
     failed_query = (
         db.query(Payment, Customer)
-        .join(Customer, Payment.customer_id == Customer.id)
+        .join(
+            Customer,
+            and_(
+                Payment.customer_id == Customer.id,
+                Payment.merchant_id == Customer.merchant_id,
+            ),
+        )
         .filter(Payment.status == "failed")
     )
     if merchant_id:

@@ -36,25 +36,31 @@ export const AgentActivityFeed: React.FC<AgentActivityFeedProps> = ({ activities
       </div>
 
       <div className="flow-root">
-        <ul className="-mb-4 divide-y divide-slate-100">
-          {activities.map((act) => (
-            <li key={act.id} className="py-3 flex items-start space-x-3">
-              <div className="mt-0.5 shrink-0">{getIcon(act.status)}</div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs text-[#0F172A] leading-relaxed">{act.description}</p>
-                <div className="mt-1 flex items-center space-x-2 text-[10px] text-[#64748B]">
-                  <span className="font-mono">{act.timestamp}</span>
-                  {act.caseId && (
-                    <>
-                      <span>•</span>
-                      <span className="font-mono text-slate-500">{act.caseId}</span>
-                    </>
-                  )}
+        {activities.length === 0 ? (
+          <div className="py-8 text-center text-xs text-[#64748B]">
+            No autonomous recovery activity yet. Run a simulation to see live actions.
+          </div>
+        ) : (
+          <ul className="-mb-4 divide-y divide-slate-100">
+            {activities.map((act) => (
+              <li key={act.id} className="py-3 flex items-start space-x-3">
+                <div className="mt-0.5 shrink-0">{getIcon(act.status)}</div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-[#0F172A] leading-relaxed">{act.description}</p>
+                  <div className="mt-1 flex items-center space-x-2 text-[10px] text-[#64748B]">
+                    <span className="font-mono">{act.timestamp}</span>
+                    {act.caseId && (
+                      <>
+                        <span>•</span>
+                        <span className="font-mono text-slate-500">{act.caseId}</span>
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
-            </li>
-          ))}
-        </ul>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </div>
   );

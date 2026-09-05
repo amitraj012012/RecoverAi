@@ -143,7 +143,7 @@ export const AiDecisionsPage: React.FC = () => {
             <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
               <div className="text-xs font-bold text-[#0F172A] flex items-center justify-between">
                 <span>Context Cluster: {relevantMemory.context_cluster}</span>
-                <span className="text-[10px] text-slate-500 font-mono">Sample Size: {relevantMemory.sample_size}</span>
+                <span className="text-[10px] text-slate-500 font-mono">Sample Size: {relevantMemory.sample_size} experiences</span>
               </div>
               <div className="text-xs text-slate-600">
                 Empirical Strategy Win-Rates:
@@ -164,7 +164,7 @@ export const AiDecisionsPage: React.FC = () => {
 
             <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
               <div className="text-xs font-bold text-[#0F172A] flex items-center justify-between">
-                <span>Recent Retrieved Memories</span>
+                <span>Recent Retrieved Memories (Top {relevantMemory.recent_experiences.length})</span>
                 <History className="w-3.5 h-3.5 text-slate-400" />
               </div>
               {relevantMemory.recent_experiences.length === 0 ? (

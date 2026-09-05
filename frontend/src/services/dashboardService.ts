@@ -562,5 +562,33 @@ export async function fetchRevenueTrends(): Promise<RevenueTrendPoint[]> {
 }
 
 export async function fetchRecentActivities(): Promise<AgentActivity[]> {
-  return mockRecentActivities;
+  try {
+    const decisions = await fetchAiDecisions(10);
+    if (decisions && decisions.length > 0) {
+      return decisions.map((d: any) => {
+        const isSuccess = d.current_status === 'RECOVERED' || d.tool_result === 'SUCCESS';
+        const isWarning = d.current_status === 'ESCALATED';
+        const timeStr = d.created_at
+          ? new Date(d.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+          : 'Just now';
+        let description = d.decision_reason;
+        if (d.current_status === 'RECOVERED') {
+          description = `Payment verified for ${d.customer_id} — Recovered via ${d.selected_strategy.replace(/_/g, ' ')}`;
+        } else if (d.current_status === 'ESCALATED') {
+          description = `Case ${d.recovery_case_id} escalated to human operations`;
+        }
+        return {
+          id: d.id,
+          timestamp: timeStr,
+          eventType: d.selected_strategy,
+          description,
+          status: isSuccess ? 'success' : isWarning ? 'warning' : 'info',
+          caseId: d.recovery_case_id,
+        };
+      });
+    }
+  } catch (err) {
+    console.warn('Failed to fetch recent activities:', err);
+  }
+  return [];
 }

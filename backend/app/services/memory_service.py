@@ -195,10 +195,12 @@ def retrieve_relevant_experiences(
             "created_at": m.created_at.isoformat(),
         })
 
+    total_cluster_experiences = sum(s["attempts"] for s in strategy_conversion.values())
+
     return {
         "context_cluster": cluster,
         "memory_version": MEMORY_VERSION,
-        "sample_size": len(items),
+        "sample_size": total_cluster_experiences,
         "strategy_performance": strategy_conversion,
         "recent_experiences": items,
     }
